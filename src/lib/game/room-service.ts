@@ -181,6 +181,19 @@ export async function resumeRoom(hostUserId: string, roomId: string): Promise<Ro
   });
 }
 
+/** Pausa manual del host (congela el reloj determinístico hasta reanudar). */
+export async function pauseRoom(hostUserId: string, roomId: string): Promise<Room> {
+  const room = await db.room.findUnique({ where: { id: roomId } });
+  if (!room) throw notFound("Sala no encontrada");
+  if (room.hostId !== hostUserId) throw forbidden("Solo el anfitrión puede pausar");
+  if (room.status !== "RUNNING") throw badRequest("La sala no está corriendo");
+  if (room.pausedAt) return room;
+  return db.room.update({
+    where: { id: roomId },
+    data: { pausedAt: new Date(), status: "PAUSED" },
+  });
+}
+
 export async function resetRoom(hostUserId: string, roomId: string): Promise<Room> {
   const room = await db.room.findUnique({ where: { id: roomId } });
   if (!room) throw notFound("Sala no encontrada");
@@ -398,6 +411,7 @@ export async function evaluateRoomWins(roomId: string): Promise<void> {
     });
 
     let lineTriggeredPause = false;
+    let cornersTriggeredPause = false;
     let bingoTriggeredEnd = false;
 
     for (const ticket of tickets) {
@@ -410,7 +424,8 @@ export async function evaluateRoomWins(roomId: string): Promise<void> {
       }
       // Esquinas
       if (hasFourCorners(grid, drawnSet)) {
-        await creditWin(tx, room, ticket, "CORNERS", revealedCount, drawnSet);
+        const r = await creditWin(tx, room, ticket, "CORNERS", revealedCount, drawnSet);
+        if (r.registered && r.firstInRoom) cornersTriggeredPause = true;
       }
       // Bingo
       if (hasBingo(grid, drawnSet)) {
@@ -419,8 +434,8 @@ export async function evaluateRoomWins(roomId: string): Promise<void> {
       }
     }
 
-    // Pausa automática por 1ra Línea (si la sala estaba corriendo)
-    if (lineTriggeredPause && room.status === "RUNNING") {
+    // Pausa automática por 1ra Línea o 1ras Esquinas (si la sala estaba corriendo)
+    if ((lineTriggeredPause || cornersTriggeredPause) && room.status === "RUNNING") {
       await tx.room.update({
         where: { id: roomId },
         data: { pausedAt: new Date(now), status: "PAUSED" },
@@ -520,9 +535,9 @@ export async function claim(
       return { valid: false, prizeAwarded: 0, winnersCount: 0, drawIndex, reason };
     }
 
-    // Pausa/fin en el primer ganador (consistencia con auto-detección)
+    // Pausa (Línea o Esquinas) o fin (Bingo) en el primer ganador del tipo
     if (result.firstInRoom) {
-      if (type === "LINE" && room.status === "RUNNING") {
+      if ((type === "LINE" || type === "CORNERS") && room.status === "RUNNING") {
         await tx.room.update({
           where: { id: roomId },
           data: { pausedAt: new Date(now), status: "PAUSED" },

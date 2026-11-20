@@ -23,6 +23,7 @@ import {
   ArrowLeft,
   Copy,
   Loader2,
+  Pause,
   Play,
   RotateCcw,
   Volume2,
@@ -172,11 +173,13 @@ export function RoomView() {
     }
   };
 
-  const hostAction = async (action: "start" | "resume" | "reset") => {
+  const hostAction = async (action: "start" | "resume" | "reset" | "pause") => {
     if (!roomId) return;
     try {
       await apiFetch(`/api/rooms/${roomId}/${action}`, { method: "POST" });
-      toast.success(action === "start" ? "Sorteo iniciado" : action === "resume" ? "Sorteo reanudado" : "Sala reiniciada");
+      toast.success(
+        action === "start" ? "Sorteo iniciado" : action === "resume" ? "Sorteo reanudado" : action === "pause" ? "Sorteo pausado" : "Sala reiniciada",
+      );
       await loadTickets();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Error");
@@ -326,24 +329,37 @@ export function RoomView() {
 
             {/* Controles de host */}
             {isHost && (
-              <div className="flex flex-wrap gap-2 rounded-xl border border-border/40 bg-card/60 p-2">
-                {state.status === "WAITING" && (
-                  <Button onClick={() => hostAction("start")} size="sm" className="gap-1">
-                    <Play className="h-4 w-4" /> Iniciar sorteo
+              <div className="space-y-2 rounded-xl border border-border/40 bg-card/60 p-2">
+                <div className="flex flex-wrap gap-2">
+                  {state.status === "WAITING" && (
+                    <Button onClick={() => hostAction("start")} size="sm" className="gap-1">
+                      <Play className="h-4 w-4" /> Iniciar sorteo
+                    </Button>
+                  )}
+                  {state.status === "RUNNING" && (
+                    <Button onClick={() => hostAction("pause")} size="sm" variant="outline" className="gap-1">
+                      <Pause className="h-4 w-4" /> Pausar
+                    </Button>
+                  )}
+                  {state.status === "PAUSED" && (
+                    <Button onClick={() => hostAction("resume")} size="sm" className="gap-1">
+                      <Play className="h-4 w-4" /> Reanudar
+                    </Button>
+                  )}
+                  {(state.status === "ENDED" || state.status === "RUNNING" || state.status === "PAUSED") && (
+                    <Button onClick={() => hostAction("reset")} size="sm" variant="outline" className="gap-1">
+                      <RotateCcw className="h-4 w-4" /> Reiniciar ronda
+                    </Button>
+                  )}
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  {/* Copiar enlace de invitación — visible para el host */}
+                  <Button onClick={copyInvite} size="sm" variant="ghost" className="gap-1 text-xs">
+                    <Copy className="h-3.5 w-3.5" /> Copiar enlace de invitación
                   </Button>
-                )}
-                {state.status === "PAUSED" && (
-                  <Button onClick={() => hostAction("resume")} size="sm" className="gap-1">
-                    <Play className="h-4 w-4" /> Continuar
-                  </Button>
-                )}
-                {(state.status === "ENDED" || state.status === "RUNNING" || state.status === "PAUSED") && (
-                  <Button onClick={() => hostAction("reset")} size="sm" variant="outline" className="gap-1">
-                    <RotateCcw className="h-4 w-4" /> Reiniciar ronda
-                  </Button>
-                )}
-                <div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
-                  {state.isPublic ? "Pública" : "Privada"} · {state.participants.length} jugadores
+                  <span className="text-xs text-muted-foreground">
+                    {state.isPublic ? "Pública" : "Privada"} · {state.participants.length} jugadores
+                  </span>
                 </div>
               </div>
             )}
