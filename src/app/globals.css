@@ -79,37 +79,37 @@
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
+  --background: oklch(0.18 0.04 155);
   --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
+  --card: oklch(0.22 0.03 155);
   --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
+  --popover: oklch(0.22 0.03 155);
   --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
+  --primary: oklch(0.72 0.19 70);
+  --primary-foreground: oklch(0.18 0.04 155);
+  --secondary: oklch(0.27 0.03 155);
   --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.26 0.025 155);
+  --muted-foreground: oklch(0.72 0.02 155);
+  --accent: oklch(0.7 0.18 70);
+  --accent-foreground: oklch(0.18 0.04 155);
   --destructive: oklch(0.704 0.191 22.216);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.488 0.243 264.376);
+  --ring: oklch(0.72 0.19 70);
+  --chart-1: oklch(0.7 0.18 70);
   --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
+  --chart-3: oklch(0.645 0.246 16.439);
   --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.205 0 0);
+  --chart-5: oklch(0.769 0.188 70.08);
+  --sidebar: oklch(0.22 0.03 155);
   --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-primary: oklch(0.72 0.19 70);
+  --sidebar-primary-foreground: oklch(0.18 0.04 155);
+  --sidebar-accent: oklch(0.27 0.03 155);
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --sidebar-ring: oklch(0.72 0.19 70);
 }
 
 @layer base {
@@ -120,3 +120,92 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* ──────────────────────────────────────────────────────────────────────────
+   BINGO 75 — utilidades de tema
+   ────────────────────────────────────────────────────────────────────────── */
+
+/* Fondo de mesa de bingo (felt verde) */
+.felt-bg {
+  background-image:
+    radial-gradient(circle at 50% 0%, oklch(0.22 0.05 155) 0%, oklch(0.16 0.04 155) 60%, oklch(0.12 0.03 155) 100%);
+}
+
+/* Colores de bolillas por columna (sin azul/índigo) */
+.ball-B { background-color: oklch(0.7 0.17 162); color: oklch(0.15 0.04 162); }
+.ball-I { background-color: oklch(0.78 0.16 75); color: oklch(0.18 0.05 75); }
+.ball-N { background-color: oklch(0.65 0.22 16); color: oklch(0.98 0 0); }
+.ball-G { background-color: oklch(0.62 0.24 304); color: oklch(0.98 0 0); }
+.ball-O { background-color: oklch(0.7 0.18 55); color: oklch(0.18 0.05 55); }
+
+/* Dorado para premios y near-miss */
+.text-gold { color: oklch(0.82 0.16 85); }
+.bg-gold { background-color: oklch(0.82 0.16 85); }
+.border-gold { border-color: oklch(0.82 0.16 85); }
+
+/* Pulso dorado para cartones "a 1 bolilla" (near-miss) */
+@keyframes nearMissPulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 oklch(0.82 0.16 85 / 0.55), 0 0 0 0 oklch(0.82 0.16 85 / 0.3);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 0 6px oklch(0.82 0.16 85 / 0), 0 0 22px 4px oklch(0.82 0.16 85 / 0.45);
+    transform: scale(1.015);
+  }
+}
+.near-miss-pulse {
+  animation: nearMissPulse 1.4s ease-in-out infinite;
+  border-color: oklch(0.82 0.16 85) !important;
+}
+
+/* Bolilla nueva cantada (pop) */
+@keyframes ballPop {
+  0% { transform: scale(0.3) rotate(-25deg); opacity: 0; }
+  60% { transform: scale(1.12) rotate(6deg); opacity: 1; }
+  100% { transform: scale(1) rotate(0); opacity: 1; }
+}
+.ball-pop { animation: ballPop 0.45s cubic-bezier(0.18, 0.89, 0.32, 1.28); }
+
+/* Confeti */
+@keyframes confettiFall {
+  0% { transform: translateY(-10vh) rotate(0deg); opacity: 1; }
+  100% { transform: translateY(110vh) rotate(720deg); opacity: 0; }
+}
+.confetti-piece {
+  position: fixed;
+  top: 0;
+  width: 10px;
+  height: 14px;
+  animation: confettiFall linear forwards;
+  z-index: 60;
+  pointer-events: none;
+}
+
+/* Celda marcada del cartón */
+.cell-marked {
+  background-color: oklch(0.72 0.19 70);
+  color: oklch(0.15 0.04 155);
+}
+.cell-winning {
+  background-color: oklch(0.82 0.16 85);
+  color: oklch(0.15 0.04 155);
+  animation: nearMissPulse 1s ease-in-out infinite;
+}
+
+/* Scrollbar oscura */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: oklch(0.35 0.04 155) transparent;
+}
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background-color: oklch(0.35 0.04 155);
+  border-radius: 8px;
+}
+*::-webkit-scrollbar-thumb:hover { background-color: oklch(0.45 0.05 155); }
+
+/* Safe area iOS */
+.pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+.pt-safe { padding-top: env(safe-area-inset-top); }

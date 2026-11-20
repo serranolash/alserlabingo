@@ -177,3 +177,33 @@ export function nearestMiss(
     kind === "LINE" ? p.line.cells : kind === "CORNERS" ? p.corners.cells : p.bingo.cells;
   return { kind, missing: p.bestMissing, missingCells: cells };
 }
+
+/**
+ * Devuelve las celdas que forman el patrón ganador (para resaltado visual).
+ * Si no hay victoria de ese tipo, retorna null.
+ */
+export function getWinningCells(
+  grid: Grid,
+  drawn: DrawnSet,
+  type: "LINE" | "CORNERS" | "BINGO",
+): Array<[number, number]> | null {
+  if (grid.length < GRID_SIZE) return null;
+  if (type === "CORNERS") {
+    return hasFourCorners(grid, drawn) ? CORNER_CELLS : null;
+  }
+  if (type === "BINGO") {
+    if (!hasBingo(grid, drawn)) return null;
+    const cells: Array<[number, number]> = [];
+    for (let r = 0; r < GRID_SIZE; r++)
+      for (let c = 0; c < GRID_SIZE; c++) cells.push([r, c]);
+    return cells;
+  }
+  // LINE: la primera línea completada
+  for (const line of LINES) {
+    const cells = lineCells(line);
+    if (cells.every(([r, c]) => isCovered(grid[r]?.[c] ?? null, drawn))) {
+      return cells;
+    }
+  }
+  return null;
+}
