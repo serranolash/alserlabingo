@@ -1,16 +1,20 @@
 {
-  "name": "nextjs_tailwind_shadcn_ts",
-  "version": "0.2.1",
+  "name": "bingo75",
+  "version": "1.0.0",
   "private": true,
+  "description": "Bingo 75 en tiempo real — sorteo determinístico stateless, cartones interactivos, locutor de voz, pagos híbridos (MercadoPago + transferencias) y panel admin. PWA instalable.",
   "scripts": {
-    "dev": "next dev -p 3000 2>&1 | tee dev.log",
-    "build": "next build && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/",
-    "start": "NODE_ENV=production bun .next/standalone/server.js 2>&1 | tee server.log",
+    "dev": "next dev -p 3000",
+    "build": "next build",
+    "start": "next start -p 3000",
     "lint": "eslint .",
+    "gen-icons": "node scripts/gen-icons.mjs",
     "db:push": "prisma db push --accept-data-loss",
     "db:generate": "prisma generate",
+    "db:studio": "prisma studio",
     "db:migrate": "prisma migrate dev",
-    "db:reset": "prisma migrate reset"
+    "db:reset": "prisma migrate reset",
+    "postinstall": "prisma generate"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
