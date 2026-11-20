@@ -1,0 +1,502 @@
+   400→import { Purchase } from './purchase.entity';
+   401→import { Claim } from './claim.entity';
+   402→import { RoomParticipant } from './room-participant.entity';
+   403→
+   404→@Entity('users')
+   405→export class User {
+   406→  @PrimaryGeneratedColumn('uuid') id: string;
+   407→  @Column({ length: 120 }) name: string;
+   408→  @Column({ type: 'int', default: 0 }) balance: number;
+   409→  @CreateDateColumn({ name: 'created_at' }) createdAt: Date;
+   410→
+   411→  @OneToMany(() => Room, (r) => r.host) hostedRooms: Room[];
+   412→  @OneToMany(() => RoomParticipant, (rp) => rp.user) participations: RoomParticipant[];
+   413→  @OneToMany(() => Ticket, (t) => t.user) tickets: Ticket[];
+   414→  @OneToMany(() => Purchase, (p) => p.user) purchases: Purchase[];
+   415→  @OneToMany(() => Claim, (c) => c.user) claims: Claim[];
+   416→}
+   417→</file>
+   418→
+   419→<file path="src/gateway/game.gateway.ts">
+   420→// src/gateway/game.gateway.ts
+   421→import {
+   422→  WebSocketGateway,
+   423→  WebSocketServer,
+   424→  SubscribeMessage,
+   425→  MessageBody,
+   426→  ConnectedSocket,
+   427→} from '@nestjs/websockets';
+   428→import { Server, Socket } from 'socket.io';
+   429→
+   430→type RoomStatusPayload = {
+   431→  status: 'waiting' | 'running' | 'ended';
+   432→  startedAt?: Date;
+   433→  endedAt?: Date;
+   434→};
+   435→
+   436→// Soporta 'line' | 'bingo' | 'corners'
+   437→type WinKind = 'line' | 'bingo' | 'corners';
+   438→
+   439→/**
+   440→ * Payload de ganador(es).
+   441→ * - Mantiene compat con tu versión previa (winners[] opcional).
+   442→ * - Suma los nuevos opcionales: prizePerWinner, winnersCount.
+   443→ */
+   444→export interface WinPayload {
+   445→  type: WinKind;
+   446→  userId: string;
+   447→  ticketId: string;
+   448→  drawIndex: number;
+   449→  // Nuevos opcionales (co-ganadores / premio dividido)
+   450→  prizePerWinner?: number;
+   451→  winnersCount?: number;
+   452→  // Compat previo: lista detallada de ganadores (opcional)
+   453→
+   454→  userName?: string;        // <--- esto elimina el TS2353
+   455→  prizeLabel?: string;      // p.ej. "Línea", "Esquinas", "Bingo"
+   456→  prizeTotal?: number;      // opcional: total del premio configurado
+   457→  winners?: Array<{ userId: string; ticketId: string }>;
+   458→}
+   459→
+   460→type ClaimPayload = {
+   461→  type: WinKind; // también admite 'corners'
+   462→  userId: string;
+   463→  ticketId: string;
+   464→  drawIndex: number;
+   465→  valid: boolean;
+   466→};
+   467→
+   468→type PurchasePayload = {
+   469→  userId: string;
+   470→  quantity: number;
+   471→  tickets?: Array<{ id: string; grid: number[][] }>;
+   472→  newBalance?: number;
+   473→};
+   474→
+   475→type PlayerJoinedPayload = {
+   476→  userId: string;
+   477→  name?: string;
+   478→  balance?: number;
+   479→};
+   480→
+   481→@WebSocketGateway({
+   482→  cors: { origin: true, credentials: true },
+   483→})
+   484→export class GameGateway {
+   485→  @WebSocketServer()
+   486→  server!: Server;
+   487→
+   488→  // ======= Suscripción básica: cliente se une a la sala =======
+   489→  @SubscribeMessage('join_room')
+   490→  handleJoinRoom(
+   491→    @MessageBody() data: { roomId?: string; name?: string; userId?: string },
+   492→    @ConnectedSocket() client: Socket,
+   493→  ) {
+   494→    const roomId = String(data?.roomId ?? '');
+   495→    if (!roomId) return;
+   496→    client.join(roomId);
+   497→    // notificación ligera para refrescar listas
+   498→    this.server.to(roomId).emit('participants_update', {
+   499→      userId: data?.userId ?? client.id,
+   500→      name: data?.name,
+   501→    });
+   502→  }
+   503→
+   504→  // ================= Emisores usados por RoomsService =================
+   505→
+   506→  broadcastRoomCreated(payload: {
+   507→    roomId: string;
+   508→    token: string;
+   509→    hostUserId: string;
+   510→    inviteUrl?: string;
+   511→  }) {
+   512→    this.server.emit('room_created', payload);
+   513→  }
+   514→
+   515→  broadcastRoomStatus(roomId: string, payload: RoomStatusPayload) {
+   516→    this.server.to(roomId).emit('room_status', payload);
+   517→  }
+   518→
+   519→  broadcastState(roomId: string, state: any) {
+   520→    // Compat: algunos front escuchan 'room_state' y otros 'state'
+   521→    this.server.to(roomId).emit('room_state', state);
+   522→    this.server.to(roomId).emit('state', state);
+   523→  }
+   524→
+   525→  broadcastDraw(roomId: string, payload: { number: number; order: number }) {
+   526→    // Compat: 'draw' (solo número) y 'draw_number'
+   527→    this.server.to(roomId).emit('draw', payload.number);
+   528→    this.server.to(roomId).emit('draw_number', payload.number);
+   529→  }
+   530→
+   531→  broadcastPurchase(roomId: string, payload: PurchasePayload) {
+   532→    this.server.to(roomId).emit('purchase_update', payload);
+   533→  }
+   534→
+   535→  broadcastPlayerJoined(roomId: string, payload: PlayerJoinedPayload) {
+   536→    this.server.to(roomId).emit('participants_update', payload);
+   537→  }
+   538→
+   539→  broadcastClaim(roomId: string, payload: ClaimPayload) {
+   540→    this.server.to(roomId).emit('claim_update', payload);
+   541→  }
+   542→
+   543→  /**
+   544→   * Win: emite en ambos canales para compatibilidad:
+   545→   * - 'win' (tu nuevo evento solicitado)
+   546→   * - 'claim_update' con valid=true (muchos front ya lo consumen)
+   547→   * Además, mantenemos 'win_update' opcional por retrocompat.
+   548→   */
+   549→  broadcastWin(roomId: string, payload: WinPayload) {
+   550→    // Nuevo evento explícito de win
+   551→    this.server.to(roomId).emit('win', payload);
+   552→
+   553→    // Compat con flujos que usan claim_update como "evento de ganador"
+   554→    this.server.to(roomId).emit('claim_update', { ...payload, valid: true });
+   555→
+   556→    // Compat adicional (si algún front viejo escucha 'win_update')
+   557→    this.server.to(roomId).emit('win_update', payload);
+   558→  }
+   559→
+   560→  broadcastRoomReset(roomId: string) {
+   561→    // El front actual no necesita payload
+   562→    this.server.to(roomId).emit('room_reset');
+   563→  }
+   564→
+   565→  broadcastRoundScheduled(roomId: string, startAt: string) {
+   566→    this.server.to(roomId).emit('round_scheduled', { roomId, startAt });
+   567→  }
+   568→}
+   569→</file>
+   570→
+   571→<file path="src/migrations/1757888645662-Init.ts">
+   572→import { MigrationInterface, QueryRunner } from "typeorm";
+   573→
+   574→export class Init1757888645662 implements MigrationInterface {
+   575→    name = 'Init1757888645662'
+   576→
+   577→    public async up(queryRunner: QueryRunner): Promise<void> {
+   578→        await queryRunner.query(`ALTER TABLE "room_participants" DROP CONSTRAINT "FK_25cf9baa7efbb4d9a924c396b17"`);
+   579→        await queryRunner.query(`ALTER TABLE "room_participants" DROP CONSTRAINT "FK_a0a82c13f56ba6082fb122b6adb"`);
+   580→        await queryRunner.query(`ALTER TABLE "draws" DROP CONSTRAINT "FK_e1ead08fa5f81ccf47074f48661"`);
+   581→        await queryRunner.query(`ALTER TABLE "claims" DROP CONSTRAINT "FK_d52a9b813d04e91800ba1434477"`);
+   582→        await queryRunner.query(`ALTER TABLE "claims" DROP CONSTRAINT "FK_6b6d7ad7d8c3982b44194fd542c"`);
+   583→        await queryRunner.query(`ALTER TABLE "claims" DROP CONSTRAINT "FK_bfec30e79dea8393bb7ecda6c5a"`);
+   584→        await queryRunner.query(`ALTER TABLE "purchases" DROP CONSTRAINT "FK_024ddf7e04177a07fcb9806a90a"`);
+   585→        await queryRunner.query(`ALTER TABLE "purchases" DROP CONSTRAINT "FK_a01e811b4963fccfd6bc4b894a1"`);
+   586→        await queryRunner.query(`ALTER TABLE "rooms" DROP CONSTRAINT "FK_4ff9a8b902b374939c6e73fc48e"`);
+   587→        await queryRunner.query(`ALTER TABLE "draws" RENAME COLUMN "room_id" TO "roomId"`);
+   588→        await queryRunner.query(`ALTER TABLE "rooms" RENAME COLUMN "host_id" TO "hostId"`);
+   589→        await queryRunner.query(`ALTER TABLE "room_participants" DROP COLUMN "room_id"`);
+   590→        await queryRunner.query(`ALTER TABLE "room_participants" DROP COLUMN "user_id"`);
+   591→        await queryRunner.query(`ALTER TABLE "claims" DROP COLUMN "draw_index"`);
+   592→        await queryRunner.query(`ALTER TABLE "claims" DROP COLUMN "room_id"`);
+   593→        await queryRunner.query(`ALTER TABLE "claims" DROP COLUMN "user_id"`);
+   594→        await queryRunner.query(`ALTER TABLE "claims" DROP COLUMN "ticket_id"`);
+   595→        await queryRunner.query(`ALTER TABLE "purchases" DROP COLUMN "user_id"`);
+   596→        await queryRunner.query(`ALTER TABLE "purchases" DROP COLUMN "room_id"`);
+   597→        await queryRunner.query(`ALTER TABLE "room_participants" ADD "roomId" uuid`);
+   598→        await queryRunner.query(`ALTER TABLE "room_participants" ADD "userId" uuid`);
+   599→        await queryRunner.query(`ALTER TABLE "claims" ADD "drawIndex" integer`);
+   600→        await queryRunner.query(`ALTER TABLE "claims" ADD "roomId" uuid`);
+   601→        await queryRunner.query(`ALTER TABLE "claims" ADD "userId" uuid`);
+   602→        await queryRunner.query(`ALTER TABLE "claims" ADD "ticketId" uuid`);
+   603→        await queryRunner.query(`ALTER TABLE "purchases" ADD "userId" uuid`);
+   604→        await queryRunner.query(`ALTER TABLE "purchases" ADD "roomId" uuid`);
+   605→        await queryRunner.query(`ALTER TABLE "room_participants" ADD CONSTRAINT "FK_e5a9c5cf868f51dabb972930d41" FOREIGN KEY ("roomId") REFERENCES "rooms"("id") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+   606→        await queryRunner.query(`ALTER TABLE "room_participants" ADD CONSTRAINT "FK_2fffd7766a5c57a31e8e81c1b40" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+   607→        await queryRunner.query(`ALTER TABLE "draws" ADD CONSTRAINT "FK_ec07769aa779a93e7de3ac715bf" FOREIGN KEY ("roomId") REFERENCES "rooms"("id") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+   608→        await queryRunner.query(`ALTER TABLE "claims" ADD CONSTRAINT "FK_f94cef5e83aa557393ff7468785" FOREIGN KEY ("roomId") REFERENCES "rooms"("id") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+   609→        await queryRunner.query(`ALTER TABLE "claims" ADD CONSTRAINT "FK_299a3ed5259cccd5cf541512e73" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+   610→        await queryRunner.query(`ALTER TABLE "claims" ADD CONSTRAINT "FK_984b52241b5d4d9f7aabba4be35" FOREIGN KEY ("ticketId") REFERENCES "tickets"("id") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+   611→        await queryRunner.query(`ALTER TABLE "purchases" ADD CONSTRAINT "FK_341f0dbe584866284359f30f3da" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+   612→        await queryRunner.query(`ALTER TABLE "purchases" ADD CONSTRAINT "FK_a97f673acdb2e86746b79fc1fd4" FOREIGN KEY ("roomId") REFERENCES "rooms"("id") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+   613→        await queryRunner.query(`ALTER TABLE "rooms" ADD CONSTRAINT "FK_6c939085068c5539bad393be6b9" FOREIGN KEY ("hostId") REFERENCES "users"("id") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+   614→    }
+   615→
+   616→    public async down(queryRunner: QueryRunner): Promise<void> {
+   617→        await queryRunner.query(`ALTER TABLE "rooms" DROP CONSTRAINT "FK_6c939085068c5539bad393be6b9"`);
+   618→        await queryRunner.query(`ALTER TABLE "purchases" DROP CONSTRAINT "FK_a97f673acdb2e86746b79fc1fd4"`);
+   619→        await queryRunner.query(`ALTER TABLE "purchases" DROP CONSTRAINT "FK_341f0dbe584866284359f30f3da"`);
+   620→        await queryRunner.query(`ALTER TABLE "claims" DROP CONSTRAINT "FK_984b52241b5d4d9f7aabba4be35"`);
+   621→        await queryRunner.query(`ALTER TABLE "claims" DROP CONSTRAINT "FK_299a3ed5259cccd5cf541512e73"`);
+   622→        await queryRunner.query(`ALTER TABLE "claims" DROP CONSTRAINT "FK_f94cef5e83aa557393ff7468785"`);
+   623→        await queryRunner.query(`ALTER TABLE "draws" DROP CONSTRAINT "FK_ec07769aa779a93e7de3ac715bf"`);
+   624→        await queryRunner.query(`ALTER TABLE "room_participants" DROP CONSTRAINT "FK_2fffd7766a5c57a31e8e81c1b40"`);
+   625→        await queryRunner.query(`ALTER TABLE "room_participants" DROP CONSTRAINT "FK_e5a9c5cf868f51dabb972930d41"`);
+   626→        await queryRunner.query(`ALTER TABLE "purchases" DROP COLUMN "roomId"`);
+   627→        await queryRunner.query(`ALTER TABLE "purchases" DROP COLUMN "userId"`);
+   628→        await queryRunner.query(`ALTER TABLE "claims" DROP COLUMN "ticketId"`);
+   629→        await queryRunner.query(`ALTER TABLE "claims" DROP COLUMN "userId"`);
+   630→        await queryRunner.query(`ALTER TABLE "claims" DROP COLUMN "roomId"`);
+   631→        await queryRunner.query(`ALTER TABLE "claims" DROP COLUMN "drawIndex"`);
+   632→        await queryRunner.query(`ALTER TABLE "room_participants" DROP COLUMN "userId"`);
+   633→        await queryRunner.query(`ALTER TABLE "room_participants" DROP COLUMN "roomId"`);
+   634→        await queryRunner.query(`ALTER TABLE "purchases" ADD "room_id" uuid`);
+   635→        await queryRunner.query(`ALTER TABLE "purchases" ADD "user_id" uuid`);
+   636→        await queryRunner.query(`ALTER TABLE "claims" ADD "ticket_id" uuid`);
+   637→        await queryRunner.query(`ALTER TABLE "claims" ADD "user_id" uuid`);
+   638→        await queryRunner.query(`ALTER TABLE "claims" ADD "room_id" uuid`);
+   639→        await queryRunner.query(`ALTER TABLE "claims" ADD "draw_index" integer`);
+   640→        await queryRunner.query(`ALTER TABLE "room_participants" ADD "user_id" uuid`);
+   641→        await queryRunner.query(`ALTER TABLE "room_participants" ADD "room_id" uuid`);
+   642→        await queryRunner.query(`ALTER TABLE "rooms" RENAME COLUMN "hostId" TO "host_id"`);
+   643→        await queryRunner.query(`ALTER TABLE "draws" RENAME COLUMN "roomId" TO "room_id"`);
+   644→        await queryRunner.query(`ALTER TABLE "rooms" ADD CONSTRAINT "FK_4ff9a8b902b374939c6e73fc48e" FOREIGN KEY ("host_id") REFERENCES "users"("id") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+   645→        await queryRunner.query(`ALTER TABLE "purchases" ADD CONSTRAINT "FK_a01e811b4963fccfd6bc4b894a1" FOREIGN KEY ("room_id") REFERENCES "rooms"("id") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+   646→        await queryRunner.query(`ALTER TABLE "purchases" ADD CONSTRAINT "FK_024ddf7e04177a07fcb9806a90a" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+   647→        await queryRunner.query(`ALTER TABLE "claims" ADD CONSTRAINT "FK_bfec30e79dea8393bb7ecda6c5a" FOREIGN KEY ("ticket_id") REFERENCES "tickets"("id") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+   648→        await queryRunner.query(`ALTER TABLE "claims" ADD CONSTRAINT "FK_6b6d7ad7d8c3982b44194fd542c" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+   649→        await queryRunner.query(`ALTER TABLE "claims" ADD CONSTRAINT "FK_d52a9b813d04e91800ba1434477" FOREIGN KEY ("room_id") REFERENCES "rooms"("id") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+   650→        await queryRunner.query(`ALTER TABLE "draws" ADD CONSTRAINT "FK_e1ead08fa5f81ccf47074f48661" FOREIGN KEY ("room_id") REFERENCES "rooms"("id") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+   651→        await queryRunner.query(`ALTER TABLE "room_participants" ADD CONSTRAINT "FK_a0a82c13f56ba6082fb122b6adb" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+   652→        await queryRunner.query(`ALTER TABLE "room_participants" ADD CONSTRAINT "FK_25cf9baa7efbb4d9a924c396b17" FOREIGN KEY ("room_id") REFERENCES "rooms"("id") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+   653→    }
+   654→
+   655→}
+   656→</file>
+   657→
+   658→<file path="src/migrations/1760022661504-Init.ts">
+   659→import { MigrationInterface, QueryRunner } from "typeorm";
+   660→
+   661→export class Init1760022661504 implements MigrationInterface {
+   662→    name = 'Init1760022661504'
+   663→
+   664→    public async up(queryRunner: QueryRunner): Promise<void> {
+   665→        await queryRunner.query(`ALTER TABLE "room_participants" DROP CONSTRAINT "room_participants_room_id_fkey"`);
+   666→        await queryRunner.query(`ALTER TABLE "room_participants" DROP CONSTRAINT "room_participants_user_id_fkey"`);
+   667→        await queryRunner.query(`ALTER TABLE "claims" DROP CONSTRAINT "claims_room_id_fkey"`);
+   668→        await queryRunner.query(`ALTER TABLE "claims" DROP CONSTRAINT "claims_user_id_fkey"`);
+   669→        await queryRunner.query(`ALTER TABLE "claims" DROP CONSTRAINT "claims_ticket_id_fkey"`);
+   670→        await queryRunner.query(`ALTER TABLE "tickets" DROP CONSTRAINT "tickets_room_id_fkey"`);
+   671→        await queryRunner.query(`ALTER TABLE "tickets" DROP CONSTRAINT "tickets_user_id_fkey"`);
+   672→        await queryRunner.query(`ALTER TABLE "purchases" DROP CONSTRAINT "purchases_room_id_fkey"`);
+   673→        await queryRunner.query(`ALTER TABLE "purchases" DROP CONSTRAINT "purchases_user_id_fkey"`);
+   674→        await queryRunner.query(`ALTER TABLE "draws" DROP CONSTRAINT "draws_room_id_fkey"`);
+   675→        await queryRunner.query(`ALTER TABLE "rooms" DROP CONSTRAINT "rooms_host_id_fkey"`);
+   676→        await queryRunner.query(`ALTER TABLE "room_participants" DROP CONSTRAINT "room_participants_room_id_user_id_key"`);
+   677→        await queryRunner.query(`ALTER TABLE "room_participants" DROP COLUMN "joined_at"`);
+   678→        await queryRunner.query(`ALTER TABLE "room_participants" ADD "joined_at" TIMESTAMP NOT NULL DEFAULT now()`);
+   679→        await queryRunner.query(`ALTER TABLE "room_participants" ALTER COLUMN "room_id" DROP NOT NULL`);
+   680→        await queryRunner.query(`ALTER TABLE "room_participants" ALTER COLUMN "user_id" DROP NOT NULL`);
+   681→        await queryRunner.query(`ALTER TABLE "claims" DROP COLUMN "type"`);
+   682→        await queryRunner.query(`DROP TYPE "public"."claims_type_enum"`);
+   683→        await queryRunner.query(`ALTER TABLE "claims" ADD "type" text NOT NULL`);
+   684→        await queryRunner.query(`ALTER TABLE "claims" DROP COLUMN "created_at"`);
+   685→        await queryRunner.query(`ALTER TABLE "claims" ADD "created_at" TIMESTAMP NOT NULL DEFAULT now()`);
+   686→        await queryRunner.query(`ALTER TABLE "claims" ALTER COLUMN "room_id" DROP NOT NULL`);
+   687→        await queryRunner.query(`ALTER TABLE "claims" ALTER COLUMN "user_id" DROP NOT NULL`);
+   688→        await queryRunner.query(`ALTER TABLE "claims" ALTER COLUMN "ticket_id" DROP NOT NULL`);
+   689→        await queryRunner.query(`ALTER TABLE "tickets" DROP COLUMN "status"`);
+   690→        await queryRunner.query(`DROP TYPE "public"."ticket_status_enum"`);
+   691→        await queryRunner.query(`ALTER TABLE "tickets" ADD "status" text NOT NULL DEFAULT 'active'`);
+   692→        await queryRunner.query(`ALTER TABLE "tickets" DROP COLUMN "created_at"`);
+   693→        await queryRunner.query(`ALTER TABLE "tickets" ADD "created_at" TIMESTAMP NOT NULL DEFAULT now()`);
+   694→        await queryRunner.query(`ALTER TABLE "tickets" ALTER COLUMN "room_id" DROP NOT NULL`);
+   695→        await queryRunner.query(`ALTER TABLE "tickets" ALTER COLUMN "user_id" DROP NOT NULL`);
+   696→        await queryRunner.query(`ALTER TABLE "purchases" ALTER COLUMN "quantity" SET DEFAULT '1'`);
+   697→        await queryRunner.query(`ALTER TABLE "purchases" ALTER COLUMN "total_cost" SET DEFAULT '0'`);
+   698→        await queryRunner.query(`ALTER TABLE "purchases" DROP COLUMN "created_at"`);
+   699→        await queryRunner.query(`ALTER TABLE "purchases" ADD "created_at" TIMESTAMP NOT NULL DEFAULT now()`);
+   700→        await queryRunner.query(`ALTER TABLE "draws" DROP COLUMN "created_at"`);
+   701→        await queryRunner.query(`ALTER TABLE "draws" ADD "created_at" TIMESTAMP NOT NULL DEFAULT now()`);
+   702→        await queryRunner.query(`ALTER TABLE "draws" ALTER COLUMN "room_id" DROP NOT NULL`);
+   703→        await queryRunner.query(`ALTER TABLE "rooms" DROP CONSTRAINT "rooms_token_key"`);
+   704→        await queryRunner.query(`ALTER TABLE "rooms" DROP COLUMN "token"`);
+   705→        await queryRunner.query(`ALTER TABLE "rooms" ADD "token" character varying(32) NOT NULL`);
+   706→        await queryRunner.query(`ALTER TABLE "rooms" ADD CONSTRAINT "UQ_423e27cdaa23ceea851cea28471" UNIQUE ("token")`);
+   707→        await queryRunner.query(`ALTER TABLE "rooms" DROP COLUMN "status"`);
+   708→        await queryRunner.query(`DROP TYPE "public"."rooms_status_enum"`);
+   709→        await queryRunner.query(`ALTER TABLE "rooms" ADD "status" character varying(16) NOT NULL DEFAULT 'waiting'`);
+   710→        await queryRunner.query(`ALTER TABLE "rooms" DROP COLUMN "created_at"`);
+   711→        await queryRunner.query(`ALTER TABLE "rooms" ADD "created_at" TIMESTAMP NOT NULL DEFAULT now()`);
+   712→        await queryRunner.query(`ALTER TABLE "rooms" DROP COLUMN "started_at"`);
+   713→        await queryRunner.query(`ALTER TABLE "rooms" ADD "started_at" TIMESTAMP`);
+   714→        await queryRunner.query(`ALTER TABLE "rooms" DROP COLUMN "ended_at"`);
+   715→        await queryRunner.query(`ALTER TABLE "rooms" ADD "ended_at" TIMESTAMP`);
+   716→        await queryRunner.query(`ALTER TABLE "users" DROP COLUMN "name"`);
+   717→        await queryRunner.query(`ALTER TABLE "users" ADD "name" character varying(120) NOT NULL`);
+   718→        await queryRunner.query(`ALTER TABLE "users" DROP COLUMN "created_at"`);
+   719→        await queryRunner.query(`ALTER TABLE "users" ADD "created_at" TIMESTAMP NOT NULL DEFAULT now()`);
+   720→        await queryRunner.query(`ALTER TABLE "room_participants" ADD CONSTRAINT "UQ_b00300d77393ffd5c6797841805" UNIQUE ("room_id", "user_id")`);
+   721→        await queryRunner.query(`ALTER TABLE "room_participants" ADD CONSTRAINT "FK_25cf9baa7efbb4d9a924c396b17" FOREIGN KEY ("room_id") REFERENCES "rooms"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+   722→        await queryRunner.query(`ALTER TABLE "room_participants" ADD CONSTRAINT "FK_a0a82c13f56ba6082fb122b6adb" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+   723→        await queryRunner.query(`ALTER TABLE "claims" ADD CONSTRAINT "FK_d52a9b813d04e91800ba1434477" FOREIGN KEY ("room_id") REFERENCES "rooms"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+   724→        await queryRunner.query(`ALTER TABLE "claims" ADD CONSTRAINT "FK_6b6d7ad7d8c3982b44194fd542c" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+   725→        await queryRunner.query(`ALTER TABLE "claims" ADD CONSTRAINT "FK_bfec30e79dea8393bb7ecda6c5a" FOREIGN KEY ("ticket_id") REFERENCES "tickets"("id") ON DELETE SET NULL ON UPDATE NO ACTION`);
+   726→        await queryRunner.query(`ALTER TABLE "tickets" ADD CONSTRAINT "FK_e12d73a31aa5c3629a0243e7e1b" FOREIGN KEY ("room_id") REFERENCES "rooms"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+   727→        await queryRunner.query(`ALTER TABLE "tickets" ADD CONSTRAINT "FK_2e445270177206a97921e461710" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+   728→        await queryRunner.query(`ALTER TABLE "purchases" ADD CONSTRAINT "FK_024ddf7e04177a07fcb9806a90a" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+   729→        await queryRunner.query(`ALTER TABLE "purchases" ADD CONSTRAINT "FK_a01e811b4963fccfd6bc4b894a1" FOREIGN KEY ("room_id") REFERENCES "rooms"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+   730→        await queryRunner.query(`ALTER TABLE "draws" ADD CONSTRAINT "FK_e1ead08fa5f81ccf47074f48661" FOREIGN KEY ("room_id") REFERENCES "rooms"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+   731→        await queryRunner.query(`ALTER TABLE "rooms" ADD CONSTRAINT "FK_4ff9a8b902b374939c6e73fc48e" FOREIGN KEY ("host_id") REFERENCES "users"("id") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+   732→    }
+   733→
+   734→    public async down(queryRunner: QueryRunner): Promise<void> {
+   735→        await queryRunner.query(`ALTER TABLE "rooms" DROP CONSTRAINT "FK_4ff9a8b902b374939c6e73fc48e"`);
+   736→        await queryRunner.query(`ALTER TABLE "draws" DROP CONSTRAINT "FK_e1ead08fa5f81ccf47074f48661"`);
+   737→        await queryRunner.query(`ALTER TABLE "purchases" DROP CONSTRAINT "FK_a01e811b4963fccfd6bc4b894a1"`);
+   738→        await queryRunner.query(`ALTER TABLE "purchases" DROP CONSTRAINT "FK_024ddf7e04177a07fcb9806a90a"`);
+   739→        await queryRunner.query(`ALTER TABLE "tickets" DROP CONSTRAINT "FK_2e445270177206a97921e461710"`);
+   740→        await queryRunner.query(`ALTER TABLE "tickets" DROP CONSTRAINT "FK_e12d73a31aa5c3629a0243e7e1b"`);
+   741→        await queryRunner.query(`ALTER TABLE "claims" DROP CONSTRAINT "FK_bfec30e79dea8393bb7ecda6c5a"`);
+   742→        await queryRunner.query(`ALTER TABLE "claims" DROP CONSTRAINT "FK_6b6d7ad7d8c3982b44194fd542c"`);
+   743→        await queryRunner.query(`ALTER TABLE "claims" DROP CONSTRAINT "FK_d52a9b813d04e91800ba1434477"`);
+   744→        await queryRunner.query(`ALTER TABLE "room_participants" DROP CONSTRAINT "FK_a0a82c13f56ba6082fb122b6adb"`);
+   745→        await queryRunner.query(`ALTER TABLE "room_participants" DROP CONSTRAINT "FK_25cf9baa7efbb4d9a924c396b17"`);
+   746→        await queryRunner.query(`ALTER TABLE "room_participants" DROP CONSTRAINT "UQ_b00300d77393ffd5c6797841805"`);
+   747→        await queryRunner.query(`ALTER TABLE "users" DROP COLUMN "created_at"`);
+   748→        await queryRunner.query(`ALTER TABLE "users" ADD "created_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()`);
+   749→        await queryRunner.query(`ALTER TABLE "users" DROP COLUMN "name"`);
+   750→        await queryRunner.query(`ALTER TABLE "users" ADD "name" character varying(64) NOT NULL`);
+   751→        await queryRunner.query(`ALTER TABLE "rooms" DROP COLUMN "ended_at"`);
+   752→        await queryRunner.query(`ALTER TABLE "rooms" ADD "ended_at" TIMESTAMP WITH TIME ZONE`);
+   753→        await queryRunner.query(`ALTER TABLE "rooms" DROP COLUMN "started_at"`);
+   754→        await queryRunner.query(`ALTER TABLE "rooms" ADD "started_at" TIMESTAMP WITH TIME ZONE`);
+   755→        await queryRunner.query(`ALTER TABLE "rooms" DROP COLUMN "created_at"`);
+   756→        await queryRunner.query(`ALTER TABLE "rooms" ADD "created_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()`);
+   757→        await queryRunner.query(`ALTER TABLE "rooms" DROP COLUMN "status"`);
+   758→        await queryRunner.query(`CREATE TYPE "public"."rooms_status_enum" AS ENUM('waiting', 'running', 'ended')`);
+   759→        await queryRunner.query(`ALTER TABLE "rooms" ADD "status" "public"."rooms_status_enum" NOT NULL DEFAULT 'waiting'`);
+   760→        await queryRunner.query(`ALTER TABLE "rooms" DROP CONSTRAINT "UQ_423e27cdaa23ceea851cea28471"`);
+   761→        await queryRunner.query(`ALTER TABLE "rooms" DROP COLUMN "token"`);
+   762→        await queryRunner.query(`ALTER TABLE "rooms" ADD "token" character varying(64) NOT NULL`);
+   763→        await queryRunner.query(`ALTER TABLE "rooms" ADD CONSTRAINT "rooms_token_key" UNIQUE ("token")`);
+   764→        await queryRunner.query(`ALTER TABLE "draws" ALTER COLUMN "room_id" SET NOT NULL`);
+   765→        await queryRunner.query(`ALTER TABLE "draws" DROP COLUMN "created_at"`);
+   766→        await queryRunner.query(`ALTER TABLE "draws" ADD "created_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()`);
+   767→        await queryRunner.query(`ALTER TABLE "purchases" DROP COLUMN "created_at"`);
+   768→        await queryRunner.query(`ALTER TABLE "purchases" ADD "created_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()`);
+   769→        await queryRunner.query(`ALTER TABLE "purchases" ALTER COLUMN "total_cost" DROP DEFAULT`);
+   770→        await queryRunner.query(`ALTER TABLE "purchases" ALTER COLUMN "quantity" DROP DEFAULT`);
+   771→        await queryRunner.query(`ALTER TABLE "tickets" ALTER COLUMN "user_id" SET NOT NULL`);
+   772→        await queryRunner.query(`ALTER TABLE "tickets" ALTER COLUMN "room_id" SET NOT NULL`);
+   773→        await queryRunner.query(`ALTER TABLE "tickets" DROP COLUMN "created_at"`);
+   774→        await queryRunner.query(`ALTER TABLE "tickets" ADD "created_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()`);
+   775→        await queryRunner.query(`ALTER TABLE "tickets" DROP COLUMN "status"`);
+   776→        await queryRunner.query(`CREATE TYPE "public"."ticket_status_enum" AS ENUM('active', 'won_line', 'won_corners', 'won_bingo', 'void')`);
+   777→        await queryRunner.query(`ALTER TABLE "tickets" ADD "status" "public"."ticket_status_enum" NOT NULL DEFAULT 'active'`);
+   778→        await queryRunner.query(`ALTER TABLE "claims" ALTER COLUMN "ticket_id" SET NOT NULL`);
+   779→        await queryRunner.query(`ALTER TABLE "claims" ALTER COLUMN "user_id" SET NOT NULL`);
+   780→        await queryRunner.query(`ALTER TABLE "claims" ALTER COLUMN "room_id" SET NOT NULL`);
+   781→        await queryRunner.query(`ALTER TABLE "claims" DROP COLUMN "created_at"`);
+   782→        await queryRunner.query(`ALTER TABLE "claims" ADD "created_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()`);
+   783→        await queryRunner.query(`ALTER TABLE "claims" DROP COLUMN "type"`);
+   784→        await queryRunner.query(`CREATE TYPE "public"."claims_type_enum" AS ENUM('line', 'bingo', 'corners')`);
+   785→        await queryRunner.query(`ALTER TABLE "claims" ADD "type" "public"."claims_type_enum" NOT NULL`);
+   786→        await queryRunner.query(`ALTER TABLE "room_participants" ALTER COLUMN "user_id" SET NOT NULL`);
+   787→        await queryRunner.query(`ALTER TABLE "room_participants" ALTER COLUMN "room_id" SET NOT NULL`);
+   788→        await queryRunner.query(`ALTER TABLE "room_participants" DROP COLUMN "joined_at"`);
+   789→        await queryRunner.query(`ALTER TABLE "room_participants" ADD "joined_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()`);
+   790→        await queryRunner.query(`ALTER TABLE "room_participants" ADD CONSTRAINT "room_participants_room_id_user_id_key" UNIQUE ("room_id", "user_id")`);
+   791→        await queryRunner.query(`ALTER TABLE "rooms" ADD CONSTRAINT "rooms_host_id_fkey" FOREIGN KEY ("host_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+   792→        await queryRunner.query(`ALTER TABLE "draws" ADD CONSTRAINT "draws_room_id_fkey" FOREIGN KEY ("room_id") REFERENCES "rooms"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+   793→        await queryRunner.query(`ALTER TABLE "purchases" ADD CONSTRAINT "purchases_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+   794→        await queryRunner.query(`ALTER TABLE "purchases" ADD CONSTRAINT "purchases_room_id_fkey" FOREIGN KEY ("room_id") REFERENCES "rooms"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+   795→        await queryRunner.query(`ALTER TABLE "tickets" ADD CONSTRAINT "tickets_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+   796→        await queryRunner.query(`ALTER TABLE "tickets" ADD CONSTRAINT "tickets_room_id_fkey" FOREIGN KEY ("room_id") REFERENCES "rooms"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+   797→        await queryRunner.query(`ALTER TABLE "claims" ADD CONSTRAINT "claims_ticket_id_fkey" FOREIGN KEY ("ticket_id") REFERENCES "tickets"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+   798→        await queryRunner.query(`ALTER TABLE "claims" ADD CONSTRAINT "claims_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+   799→        await queryRunner.query(`ALTER TABLE "claims" ADD CONSTRAINT "claims_room_id_fkey" FOREIGN KEY ("room_id") REFERENCES "rooms"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+   800→        await queryRunner.query(`ALTER TABLE "room_participants" ADD CONSTRAINT "room_participants_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+   801→        await queryRunner.query(`ALTER TABLE "room_participants" ADD CONSTRAINT "room_participants_room_id_fkey" FOREIGN KEY ("room_id") REFERENCES "rooms"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+   802→    }
+   803→
+   804→}
+   805→</file>
+   806→
+   807→<file path="src/rooms/bingo.ts">
+   808→// src/rooms/bingo.ts
+   809→
+   810→export type Grid = (number | null)[][]; // 5x5
+   811→
+   812→export function generateBingo75Card(): Grid {
+   813→  const ranges = [
+   814→    { start: 1, end: 15 },
+   815→    { start: 16, end: 30 },
+   816→    { start: 31, end: 45 },
+   817→    { start: 46, end: 60 },
+   818→    { start: 61, end: 75 },
+   819→  ];
+   820→  const grid: Grid = Array.from({ length: 5 }, () => Array(5).fill(0));
+   821→
+   822→  for (let col = 0; col < 5; col++) {
+   823→    const nums = shuffle(range(ranges[col].start, ranges[col].end));
+   824→    for (let row = 0; row < 5; row++) {
+   825→      grid[row][col] = nums[row];
+   826→    }
+   827→  }
+   828→  grid[2][2] = null; // centro libre
+   829→  return grid;
+   830→}
+   831→
+   832→export function hasLine(grid: Grid, drawn: Set<number>): boolean {
+   833→  // filas
+   834→  for (let r = 0; r < 5; r++) {
+   835→    if (grid[r].every((v) => v === null || drawn.has(v))) return true;
+   836→  }
+   837→  // columnas
+   838→  for (let c = 0; c < 5; c++) {
+   839→    let ok = true;
+   840→    for (let r = 0; r < 5; r++) {
+   841→      const v = grid[r][c];
+   842→      if (v !== null && !drawn.has(v)) {
+   843→        ok = false;
+   844→        break;
+   845→      }
+   846→    }
+   847→    if (ok) return true;
+   848→  }
+   849→  // diagonales
+   850→  const d1 = [0, 1, 2, 3, 4].every((i) => grid[i][i] === null || drawn.has(grid[i][i]!));
+   851→  const d2 = [0, 1, 2, 3, 4].every((i) => grid[i][4 - i] === null || drawn.has(grid[i][4 - i]!));
+   852→  return d1 || d2;
+   853→}
+   854→
+   855→/**
+   856→ * Valida la condición "cuatro esquinas":
+   857→ * las posiciones (0,0), (0,4), (4,0) y (4,4) deben estar marcadas.
+   858→ * Un valor null (casilla libre) cuenta como marcada.
+   859→ */
+   860→export function hasFourCorners(grid: Grid, drawn: Set<number>): boolean {
+   861→  const rows = grid.length;
+   862→  const cols = grid[0]?.length ?? 0;
+   863→  if (rows < 5 || cols < 5) return false; // seguridad por si llega otra dimensión
+   864→
+   865→  const corners: Array<number | null> = [
+   866→    grid[0][0],
+   867→    grid[0][cols - 1],
+   868→    grid[rows - 1][0],
+   869→    grid[rows - 1][cols - 1],
+   870→  ];
+   871→
+   872→  return corners.every((v) => v === null || drawn.has(v));
+   873→}
+   874→
+   875→export function hasBingo(grid: Grid, drawn: Set<number>): boolean {
+   876→  for (let r = 0; r < 5; r++) {
+   877→    for (let c = 0; c < 5; c++) {
+   878→      const v = grid[r][c];
+   879→      if (v !== null && !drawn.has(v)) return false;
+   880→    }
+   881→  }
+   882→  return true;
+   883→}
+   884→
+   885→export function shuffle<T>(arr: T[]): T[] {
+   886→  const a = [...arr];
+   887→  for (let i = a.length - 1; i > 0; i--) {
+   888→    const j = Math.floor(Math.random() * (i + 1));
+   889→    [a[i], a[j]] = [a[j], a[i]];
+   890→  }
+   891→  return a;
+   892→}
+   893→
+   894→export function range(a: number, b: number): number[] {
+   895→  const out: number[] = [];
+   896→  for (let i = a; i <= b; i++) out.push(i);
+   897→  return out;
+   898→}
+   899→</file>
+
+[showing lines 400-899 of 2673; use offset=900 with limit to continue reading]

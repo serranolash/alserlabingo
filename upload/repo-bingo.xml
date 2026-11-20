@@ -1,0 +1,2672 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+src/
+  entities/
+    claim.entity.ts
+    draw.entity.ts
+    purchase.entity.ts
+    room-participant.entity.ts
+    room.entity.ts
+    ticket.entity.ts
+    user.entity.ts
+  gateway/
+    game.gateway.ts
+  migrations/
+    1757888645662-Init.ts
+    1760022661504-Init.ts
+  rooms/
+    bingo.ts
+    dto.ts
+    patterns.ts
+    rooms.controller.ts
+    rooms.module.ts
+    rooms.service.ts
+  app.module.ts
+  data-source.ts
+  main.ts
+.env.example
+fix_room_participants.sql
+nest-cli.json
+New Text Document.txt
+package.json
+provision_bingo_min.sql
+provision_bingo.sql
+repair_bingo.ps1
+schema_bootstrap.sql
+schema_rooms.sql
+setup-postgres-bingo.ps1
+tsconfig.json
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="src/entities/claim.entity.ts">
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  ManyToOne,
+  JoinColumn,
+  Column,
+  CreateDateColumn,
+  RelationId,
+} from 'typeorm';
+import { Room } from './room.entity';
+import { User } from './user.entity';
+import { Ticket } from './ticket.entity';
+
+@Entity('claims')
+export class Claim {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @ManyToOne(() => Room, (r) => r.claims, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'room_id' })
+  room: Room;
+
+  @RelationId((c: Claim) => c.room)
+  readonly roomId: string;
+
+  @ManyToOne(() => User, (u) => u.claims, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'user_id' })
+  user: User;
+
+  @RelationId((c: Claim) => c.user)
+  readonly userId: string;
+
+  @ManyToOne(() => Ticket, (t) => t.claims, { onDelete: 'SET NULL', nullable: true })
+  @JoinColumn({ name: 'ticket_id' })
+  ticket: Ticket | null;
+
+  @RelationId((c: Claim) => c.ticket)
+  readonly ticketId: string | null;
+
+  @Column({ type: 'text' })
+  type: 'line' | 'corners' | 'bingo';
+
+  @Column({ type: 'boolean', default: false })
+  valid: boolean;
+
+  @Column({ name: 'draw_index', type: 'int', nullable: true })
+  drawIndex: number | null;
+
+  @Column({ type: 'text', nullable: true })
+  reason: string | null;
+
+  @CreateDateColumn({ name: 'created_at' })
+  createdAt: Date;
+}
+</file>
+
+<file path="src/entities/draw.entity.ts">
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  ManyToOne,
+  JoinColumn,
+  Column,
+  CreateDateColumn,
+  RelationId,
+} from 'typeorm';
+import { Room } from './room.entity';
+
+@Entity('draws')
+export class Draw {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @ManyToOne(() => Room, (r) => r.draws, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'room_id' })
+  room: Room;
+
+  @RelationId((d: Draw) => d.room)
+  readonly roomId: string;
+
+  @Column({ type: 'int' })
+  number: number;
+
+  // OJO: el nombre de la columna BD es "order"; en TS la propiedad se llama order: number
+  @Column({ name: 'order', type: 'int' })
+  order: number;
+
+  @CreateDateColumn({ name: 'created_at' })
+  createdAt: Date;
+}
+</file>
+
+<file path="src/entities/purchase.entity.ts">
+import {
+  Entity, PrimaryGeneratedColumn, Column, CreateDateColumn,
+  ManyToOne, JoinColumn, RelationId
+} from 'typeorm';
+import { User } from './user.entity';
+import { Room } from './room.entity';
+
+@Entity('purchases')
+export class Purchase {
+  @PrimaryGeneratedColumn('uuid') id: string;
+
+  @Column({ type: 'int', default: 1 }) quantity: number;
+
+  @Column({ name: 'total_cost', type: 'int', default: 0 })
+  totalCost: number;
+
+  @CreateDateColumn({ name: 'created_at' }) createdAt: Date;
+
+  @ManyToOne(() => User, (u) => u.purchases, { nullable: false, onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'user_id' })
+  user: User;
+  @RelationId((p: Purchase) => p.user)
+  readonly userId: string;
+
+  @ManyToOne(() => Room, (r) => r.purchases, { nullable: false, onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'room_id' })
+  room: Room;
+  @RelationId((p: Purchase) => p.room)
+  readonly roomId: string;
+}
+</file>
+
+<file path="src/entities/room-participant.entity.ts">
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  ManyToOne,
+  JoinColumn,
+  CreateDateColumn,
+  RelationId,
+  Unique,
+} from 'typeorm';
+import { Room } from './room.entity';
+import { User } from './user.entity';
+
+@Entity('room_participants')
+@Unique(['room', 'user'])
+export class RoomParticipant {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @ManyToOne(() => Room, (r) => r.participants, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'room_id' })      // <-- columna real
+  room: Room;
+
+  @RelationId((rp: RoomParticipant) => rp.room)
+  readonly roomId: string;              // <-- solo lectura, NO crea columna
+
+  @ManyToOne(() => User, (u) => u.participations, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'user_id' })      // <-- columna real
+  user: User;
+
+  @RelationId((rp: RoomParticipant) => rp.user)
+  readonly userId: string;              // <-- solo lectura, NO crea columna
+
+  @CreateDateColumn({ name: 'joined_at' })
+  joinedAt: Date;                       // <-- timestamp en BD
+}
+</file>
+
+<file path="src/entities/room.entity.ts">
+// src/entities/room.entity.ts
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  ManyToOne,
+  OneToMany,
+  JoinColumn,
+  RelationId,
+} from 'typeorm';
+import { User } from './user.entity';
+import { RoomParticipant } from './room-participant.entity';
+import { Ticket } from './ticket.entity';
+import { Purchase } from './purchase.entity';
+import { Draw } from './draw.entity';
+import { Claim } from './claim.entity';
+
+export type RoomStatus = 'waiting' | 'running' | 'ended';
+
+// Tipos opcionales para ayudarte en el código (no afectan la BD)
+export type PrizeMeta = {
+  currency: 'USD' | 'EUR' | 'ARS' | 'BRL' | 'CLP';
+  line: number;
+  corners: number;
+  bingo: number;
+};
+
+export type CalendarItemMeta = {
+  id: string;
+  ts: number;     // epoch millis
+  note?: string;
+};
+
+@Entity('rooms')
+export class Room {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column({ type: 'varchar', length: 32, unique: true })
+  token: string;
+
+  @Column({ type: 'varchar', length: 16, default: 'waiting' })
+  status: RoomStatus;
+
+  // “75” para bingo americano 75 bolas; lo dejamos como texto simple.
+  @Column({ name: 'game_type', type: 'varchar', length: 16, default: '75' })
+  gameType: string;
+
+  @CreateDateColumn({ name: 'created_at' })
+  createdAt: Date;
+
+  @Column({ name: 'started_at', type: 'timestamp', nullable: true })
+  startedAt?: Date | null;
+
+  @Column({ name: 'ended_at', type: 'timestamp', nullable: true })
+  endedAt?: Date | null;
+
+  /**
+   * FK al anfitrión — columna real en BD: host_id (uuid NOT NULL REFERENCES users(id))
+   * NO declares un @Column para hostId; usa RelationId para exponer el valor sin duplicar columnas.
+   */
+  @ManyToOne(() => User, (u) => u.hostedRooms, { nullable: false })
+  @JoinColumn({ name: 'host_id' })
+  host: User;
+
+  @RelationId((room: Room) => room.host)
+  readonly hostId: string;
+
+  @OneToMany(() => RoomParticipant, (p) => p.room)
+  participants: RoomParticipant[];
+
+  @OneToMany(() => Ticket, (t) => t.room)
+  tickets: Ticket[];
+
+  @OneToMany(() => Purchase, (p) => p.room)
+  purchases: Purchase[];
+
+  @OneToMany(() => Draw, (d) => d.room)
+  draws: Draw[];
+
+  @OneToMany(() => Claim, (c) => c.room)
+  claims: Claim[];
+
+  // NUEVO: meta configurable (premios/calendario) sin romper el esquema actual
+  @Column({ type: 'jsonb', nullable: true })
+  meta?: {
+    prize?: PrizeMeta;
+    calendar?: CalendarItemMeta[];
+  };
+
+  @Column({ name: 'scheduled_start_at', type: 'timestamp', nullable: true })
+  scheduledStartAt?: Date | null;
+}
+</file>
+
+<file path="src/entities/ticket.entity.ts">
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  ManyToOne,
+  OneToMany,
+  JoinColumn,
+  Column,
+  CreateDateColumn,
+  RelationId,
+} from 'typeorm';
+import { Room } from './room.entity';
+import { User } from './user.entity';
+import { Claim } from './claim.entity';
+
+@Entity('tickets')
+export class Ticket {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @ManyToOne(() => Room, (r) => r.tickets, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'room_id' })
+  room: Room;
+
+  @RelationId((t: Ticket) => t.room)
+  readonly roomId: string;
+
+  @ManyToOne(() => User, (u) => u.tickets, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'user_id' })
+  user: User;
+
+  @RelationId((t: Ticket) => t.user)
+  readonly userId: string;
+
+  // grid se guarda como JSONB (ver parche SQL previo)
+  @Column({ type: 'jsonb' })
+  grid: number[][];
+
+  // extendemos el union para cubrir los estados usados por el servicio
+  @Column({ type: 'text', default: 'active' })
+  status: 'active' | 'used' | 'cancelled' | 'won_line' | 'won_corners' | 'won_bingo';
+
+  @CreateDateColumn({ name: 'created_at' })
+  createdAt: Date;
+
+  // relación inversa para claims (soluciona t => t.claims)
+  @OneToMany(() => Claim, (c) => c.ticket, { cascade: false })
+  claims: Claim[];
+}
+</file>
+
+<file path="src/entities/user.entity.ts">
+import { Column, Entity, PrimaryGeneratedColumn, CreateDateColumn, OneToMany } from 'typeorm';
+import { Room } from './room.entity';
+import { Ticket } from './ticket.entity';
+import { Purchase } from './purchase.entity';
+import { Claim } from './claim.entity';
+import { RoomParticipant } from './room-participant.entity';
+
+@Entity('users')
+export class User {
+  @PrimaryGeneratedColumn('uuid') id: string;
+  @Column({ length: 120 }) name: string;
+  @Column({ type: 'int', default: 0 }) balance: number;
+  @CreateDateColumn({ name: 'created_at' }) createdAt: Date;
+
+  @OneToMany(() => Room, (r) => r.host) hostedRooms: Room[];
+  @OneToMany(() => RoomParticipant, (rp) => rp.user) participations: RoomParticipant[];
+  @OneToMany(() => Ticket, (t) => t.user) tickets: Ticket[];
+  @OneToMany(() => Purchase, (p) => p.user) purchases: Purchase[];
+  @OneToMany(() => Claim, (c) => c.user) claims: Claim[];
+}
+</file>
+
+<file path="src/gateway/game.gateway.ts">
+// src/gateway/game.gateway.ts
+import {
+  WebSocketGateway,
+  WebSocketServer,
+  SubscribeMessage,
+  MessageBody,
+  ConnectedSocket,
+} from '@nestjs/websockets';
+import { Server, Socket } from 'socket.io';
+
+type RoomStatusPayload = {
+  status: 'waiting' | 'running' | 'ended';
+  startedAt?: Date;
+  endedAt?: Date;
+};
+
+// Soporta 'line' | 'bingo' | 'corners'
+type WinKind = 'line' | 'bingo' | 'corners';
+
+/**
+ * Payload de ganador(es).
+ * - Mantiene compat con tu versión previa (winners[] opcional).
+ * - Suma los nuevos opcionales: prizePerWinner, winnersCount.
+ */
+export interface WinPayload {
+  type: WinKind;
+  userId: string;
+  ticketId: string;
+  drawIndex: number;
+  // Nuevos opcionales (co-ganadores / premio dividido)
+  prizePerWinner?: number;
+  winnersCount?: number;
+  // Compat previo: lista detallada de ganadores (opcional)
+
+  userName?: string;        // <--- esto elimina el TS2353
+  prizeLabel?: string;      // p.ej. "Línea", "Esquinas", "Bingo"
+  prizeTotal?: number;      // opcional: total del premio configurado
+  winners?: Array<{ userId: string; ticketId: string }>;
+}
+
+type ClaimPayload = {
+  type: WinKind; // también admite 'corners'
+  userId: string;
+  ticketId: string;
+  drawIndex: number;
+  valid: boolean;
+};
+
+type PurchasePayload = {
+  userId: string;
+  quantity: number;
+  tickets?: Array<{ id: string; grid: number[][] }>;
+  newBalance?: number;
+};
+
+type PlayerJoinedPayload = {
+  userId: string;
+  name?: string;
+  balance?: number;
+};
+
+@WebSocketGateway({
+  cors: { origin: true, credentials: true },
+})
+export class GameGateway {
+  @WebSocketServer()
+  server!: Server;
+
+  // ======= Suscripción básica: cliente se une a la sala =======
+  @SubscribeMessage('join_room')
+  handleJoinRoom(
+    @MessageBody() data: { roomId?: string; name?: string; userId?: string },
+    @ConnectedSocket() client: Socket,
+  ) {
+    const roomId = String(data?.roomId ?? '');
+    if (!roomId) return;
+    client.join(roomId);
+    // notificación ligera para refrescar listas
+    this.server.to(roomId).emit('participants_update', {
+      userId: data?.userId ?? client.id,
+      name: data?.name,
+    });
+  }
+
+  // ================= Emisores usados por RoomsService =================
+
+  broadcastRoomCreated(payload: {
+    roomId: string;
+    token: string;
+    hostUserId: string;
+    inviteUrl?: string;
+  }) {
+    this.server.emit('room_created', payload);
+  }
+
+  broadcastRoomStatus(roomId: string, payload: RoomStatusPayload) {
+    this.server.to(roomId).emit('room_status', payload);
+  }
+
+  broadcastState(roomId: string, state: any) {
+    // Compat: algunos front escuchan 'room_state' y otros 'state'
+    this.server.to(roomId).emit('room_state', state);
+    this.server.to(roomId).emit('state', state);
+  }
+
+  broadcastDraw(roomId: string, payload: { number: number; order: number }) {
+    // Compat: 'draw' (solo número) y 'draw_number'
+    this.server.to(roomId).emit('draw', payload.number);
+    this.server.to(roomId).emit('draw_number', payload.number);
+  }
+
+  broadcastPurchase(roomId: string, payload: PurchasePayload) {
+    this.server.to(roomId).emit('purchase_update', payload);
+  }
+
+  broadcastPlayerJoined(roomId: string, payload: PlayerJoinedPayload) {
+    this.server.to(roomId).emit('participants_update', payload);
+  }
+
+  broadcastClaim(roomId: string, payload: ClaimPayload) {
+    this.server.to(roomId).emit('claim_update', payload);
+  }
+
+  /**
+   * Win: emite en ambos canales para compatibilidad:
+   * - 'win' (tu nuevo evento solicitado)
+   * - 'claim_update' con valid=true (muchos front ya lo consumen)
+   * Además, mantenemos 'win_update' opcional por retrocompat.
+   */
+  broadcastWin(roomId: string, payload: WinPayload) {
+    // Nuevo evento explícito de win
+    this.server.to(roomId).emit('win', payload);
+
+    // Compat con flujos que usan claim_update como "evento de ganador"
+    this.server.to(roomId).emit('claim_update', { ...payload, valid: true });
+
+    // Compat adicional (si algún front viejo escucha 'win_update')
+    this.server.to(roomId).emit('win_update', payload);
+  }
+
+  broadcastRoomReset(roomId: string) {
+    // El front actual no necesita payload
+    this.server.to(roomId).emit('room_reset');
+  }
+
+  broadcastRoundScheduled(roomId: string, startAt: string) {
+    this.server.to(roomId).emit('round_scheduled', { roomId, startAt });
+  }
+}
+</file>
+
+<file path="src/migrations/1757888645662-Init.ts">
+import { MigrationInterface, QueryRunner } from "typeorm";
+
+export class Init1757888645662 implements MigrationInterface {
+    name = 'Init1757888645662'
+
+    public async up(queryRunner: QueryRunner): Promise<void> {
+        await queryRunner.query(`ALTER TABLE "room_participants" DROP CONSTRAINT "FK_25cf9baa7efbb4d9a924c396b17"`);
+        await queryRunner.query(`ALTER TABLE "room_participants" DROP CONSTRAINT "FK_a0a82c13f56ba6082fb122b6adb"`);
+        await queryRunner.query(`ALTER TABLE "draws" DROP CONSTRAINT "FK_e1ead08fa5f81ccf47074f48661"`);
+        await queryRunner.query(`ALTER TABLE "claims" DROP CONSTRAINT "FK_d52a9b813d04e91800ba1434477"`);
+        await queryRunner.query(`ALTER TABLE "claims" DROP CONSTRAINT "FK_6b6d7ad7d8c3982b44194fd542c"`);
+        await queryRunner.query(`ALTER TABLE "claims" DROP CONSTRAINT "FK_bfec30e79dea8393bb7ecda6c5a"`);
+        await queryRunner.query(`ALTER TABLE "purchases" DROP CONSTRAINT "FK_024ddf7e04177a07fcb9806a90a"`);
+        await queryRunner.query(`ALTER TABLE "purchases" DROP CONSTRAINT "FK_a01e811b4963fccfd6bc4b894a1"`);
+        await queryRunner.query(`ALTER TABLE "rooms" DROP CONSTRAINT "FK_4ff9a8b902b374939c6e73fc48e"`);
+        await queryRunner.query(`ALTER TABLE "draws" RENAME COLUMN "room_id" TO "roomId"`);
+        await queryRunner.query(`ALTER TABLE "rooms" RENAME COLUMN "host_id" TO "hostId"`);
+        await queryRunner.query(`ALTER TABLE "room_participants" DROP COLUMN "room_id"`);
+        await queryRunner.query(`ALTER TABLE "room_participants" DROP COLUMN "user_id"`);
+        await queryRunner.query(`ALTER TABLE "claims" DROP COLUMN "draw_index"`);
+        await queryRunner.query(`ALTER TABLE "claims" DROP COLUMN "room_id"`);
+        await queryRunner.query(`ALTER TABLE "claims" DROP COLUMN "user_id"`);
+        await queryRunner.query(`ALTER TABLE "claims" DROP COLUMN "ticket_id"`);
+        await queryRunner.query(`ALTER TABLE "purchases" DROP COLUMN "user_id"`);
+        await queryRunner.query(`ALTER TABLE "purchases" DROP COLUMN "room_id"`);
+        await queryRunner.query(`ALTER TABLE "room_participants" ADD "roomId" uuid`);
+        await queryRunner.query(`ALTER TABLE "room_participants" ADD "userId" uuid`);
+        await queryRunner.query(`ALTER TABLE "claims" ADD "drawIndex" integer`);
+        await queryRunner.query(`ALTER TABLE "claims" ADD "roomId" uuid`);
+        await queryRunner.query(`ALTER TABLE "claims" ADD "userId" uuid`);
+        await queryRunner.query(`ALTER TABLE "claims" ADD "ticketId" uuid`);
+        await queryRunner.query(`ALTER TABLE "purchases" ADD "userId" uuid`);
+        await queryRunner.query(`ALTER TABLE "purchases" ADD "roomId" uuid`);
+        await queryRunner.query(`ALTER TABLE "room_participants" ADD CONSTRAINT "FK_e5a9c5cf868f51dabb972930d41" FOREIGN KEY ("roomId") REFERENCES "rooms"("id") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "room_participants" ADD CONSTRAINT "FK_2fffd7766a5c57a31e8e81c1b40" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "draws" ADD CONSTRAINT "FK_ec07769aa779a93e7de3ac715bf" FOREIGN KEY ("roomId") REFERENCES "rooms"("id") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "claims" ADD CONSTRAINT "FK_f94cef5e83aa557393ff7468785" FOREIGN KEY ("roomId") REFERENCES "rooms"("id") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "claims" ADD CONSTRAINT "FK_299a3ed5259cccd5cf541512e73" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "claims" ADD CONSTRAINT "FK_984b52241b5d4d9f7aabba4be35" FOREIGN KEY ("ticketId") REFERENCES "tickets"("id") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "purchases" ADD CONSTRAINT "FK_341f0dbe584866284359f30f3da" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "purchases" ADD CONSTRAINT "FK_a97f673acdb2e86746b79fc1fd4" FOREIGN KEY ("roomId") REFERENCES "rooms"("id") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "rooms" ADD CONSTRAINT "FK_6c939085068c5539bad393be6b9" FOREIGN KEY ("hostId") REFERENCES "users"("id") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+    }
+
+    public async down(queryRunner: QueryRunner): Promise<void> {
+        await queryRunner.query(`ALTER TABLE "rooms" DROP CONSTRAINT "FK_6c939085068c5539bad393be6b9"`);
+        await queryRunner.query(`ALTER TABLE "purchases" DROP CONSTRAINT "FK_a97f673acdb2e86746b79fc1fd4"`);
+        await queryRunner.query(`ALTER TABLE "purchases" DROP CONSTRAINT "FK_341f0dbe584866284359f30f3da"`);
+        await queryRunner.query(`ALTER TABLE "claims" DROP CONSTRAINT "FK_984b52241b5d4d9f7aabba4be35"`);
+        await queryRunner.query(`ALTER TABLE "claims" DROP CONSTRAINT "FK_299a3ed5259cccd5cf541512e73"`);
+        await queryRunner.query(`ALTER TABLE "claims" DROP CONSTRAINT "FK_f94cef5e83aa557393ff7468785"`);
+        await queryRunner.query(`ALTER TABLE "draws" DROP CONSTRAINT "FK_ec07769aa779a93e7de3ac715bf"`);
+        await queryRunner.query(`ALTER TABLE "room_participants" DROP CONSTRAINT "FK_2fffd7766a5c57a31e8e81c1b40"`);
+        await queryRunner.query(`ALTER TABLE "room_participants" DROP CONSTRAINT "FK_e5a9c5cf868f51dabb972930d41"`);
+        await queryRunner.query(`ALTER TABLE "purchases" DROP COLUMN "roomId"`);
+        await queryRunner.query(`ALTER TABLE "purchases" DROP COLUMN "userId"`);
+        await queryRunner.query(`ALTER TABLE "claims" DROP COLUMN "ticketId"`);
+        await queryRunner.query(`ALTER TABLE "claims" DROP COLUMN "userId"`);
+        await queryRunner.query(`ALTER TABLE "claims" DROP COLUMN "roomId"`);
+        await queryRunner.query(`ALTER TABLE "claims" DROP COLUMN "drawIndex"`);
+        await queryRunner.query(`ALTER TABLE "room_participants" DROP COLUMN "userId"`);
+        await queryRunner.query(`ALTER TABLE "room_participants" DROP COLUMN "roomId"`);
+        await queryRunner.query(`ALTER TABLE "purchases" ADD "room_id" uuid`);
+        await queryRunner.query(`ALTER TABLE "purchases" ADD "user_id" uuid`);
+        await queryRunner.query(`ALTER TABLE "claims" ADD "ticket_id" uuid`);
+        await queryRunner.query(`ALTER TABLE "claims" ADD "user_id" uuid`);
+        await queryRunner.query(`ALTER TABLE "claims" ADD "room_id" uuid`);
+        await queryRunner.query(`ALTER TABLE "claims" ADD "draw_index" integer`);
+        await queryRunner.query(`ALTER TABLE "room_participants" ADD "user_id" uuid`);
+        await queryRunner.query(`ALTER TABLE "room_participants" ADD "room_id" uuid`);
+        await queryRunner.query(`ALTER TABLE "rooms" RENAME COLUMN "hostId" TO "host_id"`);
+        await queryRunner.query(`ALTER TABLE "draws" RENAME COLUMN "roomId" TO "room_id"`);
+        await queryRunner.query(`ALTER TABLE "rooms" ADD CONSTRAINT "FK_4ff9a8b902b374939c6e73fc48e" FOREIGN KEY ("host_id") REFERENCES "users"("id") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "purchases" ADD CONSTRAINT "FK_a01e811b4963fccfd6bc4b894a1" FOREIGN KEY ("room_id") REFERENCES "rooms"("id") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "purchases" ADD CONSTRAINT "FK_024ddf7e04177a07fcb9806a90a" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "claims" ADD CONSTRAINT "FK_bfec30e79dea8393bb7ecda6c5a" FOREIGN KEY ("ticket_id") REFERENCES "tickets"("id") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "claims" ADD CONSTRAINT "FK_6b6d7ad7d8c3982b44194fd542c" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "claims" ADD CONSTRAINT "FK_d52a9b813d04e91800ba1434477" FOREIGN KEY ("room_id") REFERENCES "rooms"("id") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "draws" ADD CONSTRAINT "FK_e1ead08fa5f81ccf47074f48661" FOREIGN KEY ("room_id") REFERENCES "rooms"("id") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "room_participants" ADD CONSTRAINT "FK_a0a82c13f56ba6082fb122b6adb" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "room_participants" ADD CONSTRAINT "FK_25cf9baa7efbb4d9a924c396b17" FOREIGN KEY ("room_id") REFERENCES "rooms"("id") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+    }
+
+}
+</file>
+
+<file path="src/migrations/1760022661504-Init.ts">
+import { MigrationInterface, QueryRunner } from "typeorm";
+
+export class Init1760022661504 implements MigrationInterface {
+    name = 'Init1760022661504'
+
+    public async up(queryRunner: QueryRunner): Promise<void> {
+        await queryRunner.query(`ALTER TABLE "room_participants" DROP CONSTRAINT "room_participants_room_id_fkey"`);
+        await queryRunner.query(`ALTER TABLE "room_participants" DROP CONSTRAINT "room_participants_user_id_fkey"`);
+        await queryRunner.query(`ALTER TABLE "claims" DROP CONSTRAINT "claims_room_id_fkey"`);
+        await queryRunner.query(`ALTER TABLE "claims" DROP CONSTRAINT "claims_user_id_fkey"`);
+        await queryRunner.query(`ALTER TABLE "claims" DROP CONSTRAINT "claims_ticket_id_fkey"`);
+        await queryRunner.query(`ALTER TABLE "tickets" DROP CONSTRAINT "tickets_room_id_fkey"`);
+        await queryRunner.query(`ALTER TABLE "tickets" DROP CONSTRAINT "tickets_user_id_fkey"`);
+        await queryRunner.query(`ALTER TABLE "purchases" DROP CONSTRAINT "purchases_room_id_fkey"`);
+        await queryRunner.query(`ALTER TABLE "purchases" DROP CONSTRAINT "purchases_user_id_fkey"`);
+        await queryRunner.query(`ALTER TABLE "draws" DROP CONSTRAINT "draws_room_id_fkey"`);
+        await queryRunner.query(`ALTER TABLE "rooms" DROP CONSTRAINT "rooms_host_id_fkey"`);
+        await queryRunner.query(`ALTER TABLE "room_participants" DROP CONSTRAINT "room_participants_room_id_user_id_key"`);
+        await queryRunner.query(`ALTER TABLE "room_participants" DROP COLUMN "joined_at"`);
+        await queryRunner.query(`ALTER TABLE "room_participants" ADD "joined_at" TIMESTAMP NOT NULL DEFAULT now()`);
+        await queryRunner.query(`ALTER TABLE "room_participants" ALTER COLUMN "room_id" DROP NOT NULL`);
+        await queryRunner.query(`ALTER TABLE "room_participants" ALTER COLUMN "user_id" DROP NOT NULL`);
+        await queryRunner.query(`ALTER TABLE "claims" DROP COLUMN "type"`);
+        await queryRunner.query(`DROP TYPE "public"."claims_type_enum"`);
+        await queryRunner.query(`ALTER TABLE "claims" ADD "type" text NOT NULL`);
+        await queryRunner.query(`ALTER TABLE "claims" DROP COLUMN "created_at"`);
+        await queryRunner.query(`ALTER TABLE "claims" ADD "created_at" TIMESTAMP NOT NULL DEFAULT now()`);
+        await queryRunner.query(`ALTER TABLE "claims" ALTER COLUMN "room_id" DROP NOT NULL`);
+        await queryRunner.query(`ALTER TABLE "claims" ALTER COLUMN "user_id" DROP NOT NULL`);
+        await queryRunner.query(`ALTER TABLE "claims" ALTER COLUMN "ticket_id" DROP NOT NULL`);
+        await queryRunner.query(`ALTER TABLE "tickets" DROP COLUMN "status"`);
+        await queryRunner.query(`DROP TYPE "public"."ticket_status_enum"`);
+        await queryRunner.query(`ALTER TABLE "tickets" ADD "status" text NOT NULL DEFAULT 'active'`);
+        await queryRunner.query(`ALTER TABLE "tickets" DROP COLUMN "created_at"`);
+        await queryRunner.query(`ALTER TABLE "tickets" ADD "created_at" TIMESTAMP NOT NULL DEFAULT now()`);
+        await queryRunner.query(`ALTER TABLE "tickets" ALTER COLUMN "room_id" DROP NOT NULL`);
+        await queryRunner.query(`ALTER TABLE "tickets" ALTER COLUMN "user_id" DROP NOT NULL`);
+        await queryRunner.query(`ALTER TABLE "purchases" ALTER COLUMN "quantity" SET DEFAULT '1'`);
+        await queryRunner.query(`ALTER TABLE "purchases" ALTER COLUMN "total_cost" SET DEFAULT '0'`);
+        await queryRunner.query(`ALTER TABLE "purchases" DROP COLUMN "created_at"`);
+        await queryRunner.query(`ALTER TABLE "purchases" ADD "created_at" TIMESTAMP NOT NULL DEFAULT now()`);
+        await queryRunner.query(`ALTER TABLE "draws" DROP COLUMN "created_at"`);
+        await queryRunner.query(`ALTER TABLE "draws" ADD "created_at" TIMESTAMP NOT NULL DEFAULT now()`);
+        await queryRunner.query(`ALTER TABLE "draws" ALTER COLUMN "room_id" DROP NOT NULL`);
+        await queryRunner.query(`ALTER TABLE "rooms" DROP CONSTRAINT "rooms_token_key"`);
+        await queryRunner.query(`ALTER TABLE "rooms" DROP COLUMN "token"`);
+        await queryRunner.query(`ALTER TABLE "rooms" ADD "token" character varying(32) NOT NULL`);
+        await queryRunner.query(`ALTER TABLE "rooms" ADD CONSTRAINT "UQ_423e27cdaa23ceea851cea28471" UNIQUE ("token")`);
+        await queryRunner.query(`ALTER TABLE "rooms" DROP COLUMN "status"`);
+        await queryRunner.query(`DROP TYPE "public"."rooms_status_enum"`);
+        await queryRunner.query(`ALTER TABLE "rooms" ADD "status" character varying(16) NOT NULL DEFAULT 'waiting'`);
+        await queryRunner.query(`ALTER TABLE "rooms" DROP COLUMN "created_at"`);
+        await queryRunner.query(`ALTER TABLE "rooms" ADD "created_at" TIMESTAMP NOT NULL DEFAULT now()`);
+        await queryRunner.query(`ALTER TABLE "rooms" DROP COLUMN "started_at"`);
+        await queryRunner.query(`ALTER TABLE "rooms" ADD "started_at" TIMESTAMP`);
+        await queryRunner.query(`ALTER TABLE "rooms" DROP COLUMN "ended_at"`);
+        await queryRunner.query(`ALTER TABLE "rooms" ADD "ended_at" TIMESTAMP`);
+        await queryRunner.query(`ALTER TABLE "users" DROP COLUMN "name"`);
+        await queryRunner.query(`ALTER TABLE "users" ADD "name" character varying(120) NOT NULL`);
+        await queryRunner.query(`ALTER TABLE "users" DROP COLUMN "created_at"`);
+        await queryRunner.query(`ALTER TABLE "users" ADD "created_at" TIMESTAMP NOT NULL DEFAULT now()`);
+        await queryRunner.query(`ALTER TABLE "room_participants" ADD CONSTRAINT "UQ_b00300d77393ffd5c6797841805" UNIQUE ("room_id", "user_id")`);
+        await queryRunner.query(`ALTER TABLE "room_participants" ADD CONSTRAINT "FK_25cf9baa7efbb4d9a924c396b17" FOREIGN KEY ("room_id") REFERENCES "rooms"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "room_participants" ADD CONSTRAINT "FK_a0a82c13f56ba6082fb122b6adb" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "claims" ADD CONSTRAINT "FK_d52a9b813d04e91800ba1434477" FOREIGN KEY ("room_id") REFERENCES "rooms"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "claims" ADD CONSTRAINT "FK_6b6d7ad7d8c3982b44194fd542c" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "claims" ADD CONSTRAINT "FK_bfec30e79dea8393bb7ecda6c5a" FOREIGN KEY ("ticket_id") REFERENCES "tickets"("id") ON DELETE SET NULL ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "tickets" ADD CONSTRAINT "FK_e12d73a31aa5c3629a0243e7e1b" FOREIGN KEY ("room_id") REFERENCES "rooms"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "tickets" ADD CONSTRAINT "FK_2e445270177206a97921e461710" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "purchases" ADD CONSTRAINT "FK_024ddf7e04177a07fcb9806a90a" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "purchases" ADD CONSTRAINT "FK_a01e811b4963fccfd6bc4b894a1" FOREIGN KEY ("room_id") REFERENCES "rooms"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "draws" ADD CONSTRAINT "FK_e1ead08fa5f81ccf47074f48661" FOREIGN KEY ("room_id") REFERENCES "rooms"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "rooms" ADD CONSTRAINT "FK_4ff9a8b902b374939c6e73fc48e" FOREIGN KEY ("host_id") REFERENCES "users"("id") ON DELETE NO ACTION ON UPDATE NO ACTION`);
+    }
+
+    public async down(queryRunner: QueryRunner): Promise<void> {
+        await queryRunner.query(`ALTER TABLE "rooms" DROP CONSTRAINT "FK_4ff9a8b902b374939c6e73fc48e"`);
+        await queryRunner.query(`ALTER TABLE "draws" DROP CONSTRAINT "FK_e1ead08fa5f81ccf47074f48661"`);
+        await queryRunner.query(`ALTER TABLE "purchases" DROP CONSTRAINT "FK_a01e811b4963fccfd6bc4b894a1"`);
+        await queryRunner.query(`ALTER TABLE "purchases" DROP CONSTRAINT "FK_024ddf7e04177a07fcb9806a90a"`);
+        await queryRunner.query(`ALTER TABLE "tickets" DROP CONSTRAINT "FK_2e445270177206a97921e461710"`);
+        await queryRunner.query(`ALTER TABLE "tickets" DROP CONSTRAINT "FK_e12d73a31aa5c3629a0243e7e1b"`);
+        await queryRunner.query(`ALTER TABLE "claims" DROP CONSTRAINT "FK_bfec30e79dea8393bb7ecda6c5a"`);
+        await queryRunner.query(`ALTER TABLE "claims" DROP CONSTRAINT "FK_6b6d7ad7d8c3982b44194fd542c"`);
+        await queryRunner.query(`ALTER TABLE "claims" DROP CONSTRAINT "FK_d52a9b813d04e91800ba1434477"`);
+        await queryRunner.query(`ALTER TABLE "room_participants" DROP CONSTRAINT "FK_a0a82c13f56ba6082fb122b6adb"`);
+        await queryRunner.query(`ALTER TABLE "room_participants" DROP CONSTRAINT "FK_25cf9baa7efbb4d9a924c396b17"`);
+        await queryRunner.query(`ALTER TABLE "room_participants" DROP CONSTRAINT "UQ_b00300d77393ffd5c6797841805"`);
+        await queryRunner.query(`ALTER TABLE "users" DROP COLUMN "created_at"`);
+        await queryRunner.query(`ALTER TABLE "users" ADD "created_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()`);
+        await queryRunner.query(`ALTER TABLE "users" DROP COLUMN "name"`);
+        await queryRunner.query(`ALTER TABLE "users" ADD "name" character varying(64) NOT NULL`);
+        await queryRunner.query(`ALTER TABLE "rooms" DROP COLUMN "ended_at"`);
+        await queryRunner.query(`ALTER TABLE "rooms" ADD "ended_at" TIMESTAMP WITH TIME ZONE`);
+        await queryRunner.query(`ALTER TABLE "rooms" DROP COLUMN "started_at"`);
+        await queryRunner.query(`ALTER TABLE "rooms" ADD "started_at" TIMESTAMP WITH TIME ZONE`);
+        await queryRunner.query(`ALTER TABLE "rooms" DROP COLUMN "created_at"`);
+        await queryRunner.query(`ALTER TABLE "rooms" ADD "created_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()`);
+        await queryRunner.query(`ALTER TABLE "rooms" DROP COLUMN "status"`);
+        await queryRunner.query(`CREATE TYPE "public"."rooms_status_enum" AS ENUM('waiting', 'running', 'ended')`);
+        await queryRunner.query(`ALTER TABLE "rooms" ADD "status" "public"."rooms_status_enum" NOT NULL DEFAULT 'waiting'`);
+        await queryRunner.query(`ALTER TABLE "rooms" DROP CONSTRAINT "UQ_423e27cdaa23ceea851cea28471"`);
+        await queryRunner.query(`ALTER TABLE "rooms" DROP COLUMN "token"`);
+        await queryRunner.query(`ALTER TABLE "rooms" ADD "token" character varying(64) NOT NULL`);
+        await queryRunner.query(`ALTER TABLE "rooms" ADD CONSTRAINT "rooms_token_key" UNIQUE ("token")`);
+        await queryRunner.query(`ALTER TABLE "draws" ALTER COLUMN "room_id" SET NOT NULL`);
+        await queryRunner.query(`ALTER TABLE "draws" DROP COLUMN "created_at"`);
+        await queryRunner.query(`ALTER TABLE "draws" ADD "created_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()`);
+        await queryRunner.query(`ALTER TABLE "purchases" DROP COLUMN "created_at"`);
+        await queryRunner.query(`ALTER TABLE "purchases" ADD "created_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()`);
+        await queryRunner.query(`ALTER TABLE "purchases" ALTER COLUMN "total_cost" DROP DEFAULT`);
+        await queryRunner.query(`ALTER TABLE "purchases" ALTER COLUMN "quantity" DROP DEFAULT`);
+        await queryRunner.query(`ALTER TABLE "tickets" ALTER COLUMN "user_id" SET NOT NULL`);
+        await queryRunner.query(`ALTER TABLE "tickets" ALTER COLUMN "room_id" SET NOT NULL`);
+        await queryRunner.query(`ALTER TABLE "tickets" DROP COLUMN "created_at"`);
+        await queryRunner.query(`ALTER TABLE "tickets" ADD "created_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()`);
+        await queryRunner.query(`ALTER TABLE "tickets" DROP COLUMN "status"`);
+        await queryRunner.query(`CREATE TYPE "public"."ticket_status_enum" AS ENUM('active', 'won_line', 'won_corners', 'won_bingo', 'void')`);
+        await queryRunner.query(`ALTER TABLE "tickets" ADD "status" "public"."ticket_status_enum" NOT NULL DEFAULT 'active'`);
+        await queryRunner.query(`ALTER TABLE "claims" ALTER COLUMN "ticket_id" SET NOT NULL`);
+        await queryRunner.query(`ALTER TABLE "claims" ALTER COLUMN "user_id" SET NOT NULL`);
+        await queryRunner.query(`ALTER TABLE "claims" ALTER COLUMN "room_id" SET NOT NULL`);
+        await queryRunner.query(`ALTER TABLE "claims" DROP COLUMN "created_at"`);
+        await queryRunner.query(`ALTER TABLE "claims" ADD "created_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()`);
+        await queryRunner.query(`ALTER TABLE "claims" DROP COLUMN "type"`);
+        await queryRunner.query(`CREATE TYPE "public"."claims_type_enum" AS ENUM('line', 'bingo', 'corners')`);
+        await queryRunner.query(`ALTER TABLE "claims" ADD "type" "public"."claims_type_enum" NOT NULL`);
+        await queryRunner.query(`ALTER TABLE "room_participants" ALTER COLUMN "user_id" SET NOT NULL`);
+        await queryRunner.query(`ALTER TABLE "room_participants" ALTER COLUMN "room_id" SET NOT NULL`);
+        await queryRunner.query(`ALTER TABLE "room_participants" DROP COLUMN "joined_at"`);
+        await queryRunner.query(`ALTER TABLE "room_participants" ADD "joined_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()`);
+        await queryRunner.query(`ALTER TABLE "room_participants" ADD CONSTRAINT "room_participants_room_id_user_id_key" UNIQUE ("room_id", "user_id")`);
+        await queryRunner.query(`ALTER TABLE "rooms" ADD CONSTRAINT "rooms_host_id_fkey" FOREIGN KEY ("host_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "draws" ADD CONSTRAINT "draws_room_id_fkey" FOREIGN KEY ("room_id") REFERENCES "rooms"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "purchases" ADD CONSTRAINT "purchases_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "purchases" ADD CONSTRAINT "purchases_room_id_fkey" FOREIGN KEY ("room_id") REFERENCES "rooms"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "tickets" ADD CONSTRAINT "tickets_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "tickets" ADD CONSTRAINT "tickets_room_id_fkey" FOREIGN KEY ("room_id") REFERENCES "rooms"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "claims" ADD CONSTRAINT "claims_ticket_id_fkey" FOREIGN KEY ("ticket_id") REFERENCES "tickets"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "claims" ADD CONSTRAINT "claims_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "claims" ADD CONSTRAINT "claims_room_id_fkey" FOREIGN KEY ("room_id") REFERENCES "rooms"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "room_participants" ADD CONSTRAINT "room_participants_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+        await queryRunner.query(`ALTER TABLE "room_participants" ADD CONSTRAINT "room_participants_room_id_fkey" FOREIGN KEY ("room_id") REFERENCES "rooms"("id") ON DELETE CASCADE ON UPDATE NO ACTION`);
+    }
+
+}
+</file>
+
+<file path="src/rooms/bingo.ts">
+// src/rooms/bingo.ts
+
+export type Grid = (number | null)[][]; // 5x5
+
+export function generateBingo75Card(): Grid {
+  const ranges = [
+    { start: 1, end: 15 },
+    { start: 16, end: 30 },
+    { start: 31, end: 45 },
+    { start: 46, end: 60 },
+    { start: 61, end: 75 },
+  ];
+  const grid: Grid = Array.from({ length: 5 }, () => Array(5).fill(0));
+
+  for (let col = 0; col < 5; col++) {
+    const nums = shuffle(range(ranges[col].start, ranges[col].end));
+    for (let row = 0; row < 5; row++) {
+      grid[row][col] = nums[row];
+    }
+  }
+  grid[2][2] = null; // centro libre
+  return grid;
+}
+
+export function hasLine(grid: Grid, drawn: Set<number>): boolean {
+  // filas
+  for (let r = 0; r < 5; r++) {
+    if (grid[r].every((v) => v === null || drawn.has(v))) return true;
+  }
+  // columnas
+  for (let c = 0; c < 5; c++) {
+    let ok = true;
+    for (let r = 0; r < 5; r++) {
+      const v = grid[r][c];
+      if (v !== null && !drawn.has(v)) {
+        ok = false;
+        break;
+      }
+    }
+    if (ok) return true;
+  }
+  // diagonales
+  const d1 = [0, 1, 2, 3, 4].every((i) => grid[i][i] === null || drawn.has(grid[i][i]!));
+  const d2 = [0, 1, 2, 3, 4].every((i) => grid[i][4 - i] === null || drawn.has(grid[i][4 - i]!));
+  return d1 || d2;
+}
+
+/**
+ * Valida la condición "cuatro esquinas":
+ * las posiciones (0,0), (0,4), (4,0) y (4,4) deben estar marcadas.
+ * Un valor null (casilla libre) cuenta como marcada.
+ */
+export function hasFourCorners(grid: Grid, drawn: Set<number>): boolean {
+  const rows = grid.length;
+  const cols = grid[0]?.length ?? 0;
+  if (rows < 5 || cols < 5) return false; // seguridad por si llega otra dimensión
+
+  const corners: Array<number | null> = [
+    grid[0][0],
+    grid[0][cols - 1],
+    grid[rows - 1][0],
+    grid[rows - 1][cols - 1],
+  ];
+
+  return corners.every((v) => v === null || drawn.has(v));
+}
+
+export function hasBingo(grid: Grid, drawn: Set<number>): boolean {
+  for (let r = 0; r < 5; r++) {
+    for (let c = 0; c < 5; c++) {
+      const v = grid[r][c];
+      if (v !== null && !drawn.has(v)) return false;
+    }
+  }
+  return true;
+}
+
+export function shuffle<T>(arr: T[]): T[] {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+export function range(a: number, b: number): number[] {
+  const out: number[] = [];
+  for (let i = a; i <= b; i++) out.push(i);
+  return out;
+}
+</file>
+
+<file path="src/rooms/dto.ts">
+// src/rooms/dto.ts
+export class CreateRoomDto {
+  hostName!: string;
+}
+
+export class JoinRoomDto {
+  token!: string;
+  playerName!: string;
+}
+
+export class BuyCardsDto {
+  userId!: string;
+  token?: string;
+  quantity!: number;
+}
+
+export class StartRoomDto {
+  userId!: string; // host
+}
+
+// 👇 ahora soporta 'corners'
+export type ClaimType = 'line' | 'corners' | 'bingo';
+
+export class ClaimDto {
+  userId!: string;
+  ticketId!: string;
+  type!: ClaimType;
+}
+</file>
+
+<file path="src/rooms/patterns.ts">
+export type Cell = number | string;
+export type Board = Cell[][]; // 5x5
+
+const FREE = 'FREE';
+
+/** Convierte a número si aplica, permite 'FREE' */
+function normalizeCell(c: Cell): number | 'FREE' {
+  if (typeof c === 'number') return c;
+  if (typeof c === 'string') {
+    const t = c.trim().toUpperCase();
+    if (t === FREE) return FREE;
+    const n = Number(t);
+    if (!Number.isNaN(n)) return n;
+  }
+  // Si viniera algo raro, lo tratamos como no marcado.
+  return NaN;
+}
+
+export function hasLine(board: Board, drawn: Set<number>): boolean {
+  // filas
+  for (let r = 0; r < 5; r++) {
+    let ok = true;
+    for (let c = 0; c < 5; c++) {
+      const v = normalizeCell(board[r][c]);
+      if (v !== FREE && !drawn.has(Number(v))) { ok = false; break; }
+    }
+    if (ok) return true;
+  }
+
+  // columnas
+  for (let c = 0; c < 5; c++) {
+    let ok = true;
+    for (let r = 0; r < 5; r++) {
+      const v = normalizeCell(board[r][c]);
+      if (v !== FREE && !drawn.has(Number(v))) { ok = false; break; }
+    }
+    if (ok) return true;
+  }
+
+  // (opcional) diagonales -> descomenta si tu juego las paga como línea:
+  // let okDiag1 = true, okDiag2 = true;
+  // for (let i=0;i<5;i++){
+  //   const v1 = normalizeCell(board[i][i]);
+  //   const v2 = normalizeCell(board[i][4-i]);
+  //   if (v1 !== FREE && !drawn.has(Number(v1))) okDiag1=false;
+  //   if (v2 !== FREE && !drawn.has(Number(v2))) okDiag2=false;
+  // }
+  // if (okDiag1 || okDiag2) return true;
+
+  return false;
+}
+
+export function isBingo(board: Board, drawn: Set<number>): boolean {
+  for (let r = 0; r < 5; r++) {
+    for (let c = 0; c < 5; c++) {
+      const v = normalizeCell(board[r][c]);
+      if (v !== FREE && !drawn.has(Number(v))) return false;
+    }
+  }
+  return true;
+}
+</file>
+
+<file path="src/rooms/rooms.controller.ts">
+// src/rooms/rooms.controller.ts
+import { Body, Controller, Get, Param, Post, Req } from '@nestjs/common';
+import { Request } from 'express';
+import { RoomsService } from './rooms.service';
+import { CreateRoomDto, JoinRoomDto, BuyCardsDto, StartRoomDto, ClaimDto } from './dto';
+import { GameGateway } from '../gateway/game.gateway';
+
+@Controller('rooms')
+export class RoomsController {
+  constructor(
+    private readonly roomsService: RoomsService,
+    private readonly gateway: GameGateway,
+  ) {}
+
+  @Post()
+  async create(@Body() dto: CreateRoomDto) {
+    const appUrl = process.env.APP_PUBLIC_URL || 'http://localhost:3000';
+    return this.roomsService.createRoom(dto, appUrl);
+  }
+
+  @Post('join')
+  async join(@Body() dto: JoinRoomDto) {
+    return this.roomsService.joinRoom(dto);
+  }
+
+  @Post(':roomId/buy')
+  async buy(@Param('roomId') roomId: string, @Body() dto: BuyCardsDto) {
+    // La verificación de “compras cerradas” se hace dentro del service (status !== 'waiting')
+    const res = await this.roomsService.buyCards(roomId, dto);
+    const state = await this.roomsService.getPublicState(roomId);
+    this.gateway.broadcastState(roomId, state);
+    return res;
+  }
+
+  @Post(':roomId/start')
+  async start(@Param('roomId') roomId: string, @Body() dto: StartRoomDto) {
+    const res = await this.roomsService.startRoom(roomId, dto);
+    const state = await this.roomsService.getPublicState(roomId);
+    this.gateway.broadcastRoomStatus(roomId, { status: 'running', startedAt: new Date() });
+    this.gateway.broadcastState(roomId, state);
+    return res;
+  }
+
+  // ✅ Estado REST incluye participants/purchases/claims para el panel del host y los players
+  @Get(':roomId/state')
+  async state(@Param('roomId') roomId: string) {
+    return this.roomsService.getPublicState(roomId);
+  }
+
+  @Post(':roomId/claim')
+  async claim(@Param('roomId') roomId: string, @Body() dto: ClaimDto) {
+    const result = await this.roomsService.claim(roomId, dto);
+    const state = await this.roomsService.getPublicState(roomId);
+    this.gateway.broadcastState(roomId, state);
+    return result;
+  }
+
+  @Post(':roomId/draws/next')
+  async drawNext(@Param('roomId') roomId: string, @Req() req: Request) {
+    const hostId = (req as any)?.user?.id ?? (req as any)?.auth?.userId ?? undefined;
+    const { number, order } = await this.roomsService.drawNext(roomId, hostId);
+    return { number, order };
+  }
+
+  // ✅ Reanudar auto-sorteo tras LÍNEA
+  @Post(':roomId/resume')
+  async resume(@Param('roomId') roomId: string, @Body() dto: StartRoomDto) {
+    const res = await this.roomsService.resumeRoom(roomId, dto);
+    const state = await this.roomsService.getPublicState(roomId);
+    this.gateway.broadcastRoomStatus(roomId, { status: 'running' });
+    this.gateway.broadcastState(roomId, state);
+    return res;
+  }
+
+  // ====== ENDPOINTS HOST-ONLY: RESET & SCHEDULE ======
+
+  @Post(':roomId/reset')
+  async reset(@Param('roomId') roomId: string, @Body() body: { userId: string }) {
+    const res = await this.roomsService.resetRoom(roomId, body.userId);
+    const state = await this.roomsService.getPublicState(roomId);
+    this.gateway.broadcastRoomReset(roomId);
+    this.gateway.broadcastState(roomId, state);
+    return res;
+  }
+
+  @Post(':roomId/schedule')
+  async schedule(
+    @Param('roomId') roomId: string,
+    @Body() body: { userId: string; startAt: string } // ISO string
+  ) {
+    const res = await this.roomsService.scheduleRoom(roomId, body.userId, body.startAt);
+    return res;
+  }
+
+  @Post(':roomId/schedule/cancel')
+  async cancelSchedule(@Param('roomId') roomId: string, @Body() body: { userId: string }) {
+    const res = await this.roomsService.cancelSchedule(roomId, body.userId);
+    return res;
+  }
+}
+</file>
+
+<file path="src/rooms/rooms.module.ts">
+// src/rooms/rooms.module.ts
+import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
+
+import { RoomsController } from './rooms.controller';
+import { RoomsService } from './rooms.service';
+import { GameGateway } from '../gateway/game.gateway';
+
+// 👇 OJO: tus entidades están en src/entities
+import { User } from '../entities/user.entity';
+import { Room } from '../entities/room.entity';
+import { RoomParticipant } from '../entities/room-participant.entity';
+import { Ticket } from '../entities/ticket.entity';
+import { Purchase } from '../entities/purchase.entity';
+import { Draw } from '../entities/draw.entity';
+import { Claim } from '../entities/claim.entity';
+
+@Module({
+  imports: [
+    // ⚠️ CLAVE: esto crea los providers de repositorio para inyección
+    TypeOrmModule.forFeature([
+      User,
+      Room,
+      RoomParticipant,
+      Ticket,
+      Purchase,
+      Draw,
+      Claim,
+    ]),
+  ],
+  controllers: [RoomsController],
+  providers: [RoomsService, GameGateway],
+  exports: [RoomsService],
+})
+export class RoomsModule {}
+</file>
+
+<file path="src/rooms/rooms.service.ts">
+// src/rooms/rooms.service.ts 
+import {
+  Injectable,
+  BadRequestException,
+  NotFoundException,
+  ForbiddenException,
+} from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+
+import { User } from '../entities/user.entity';
+import { Room } from '../entities/room.entity';
+import { RoomParticipant } from '../entities/room-participant.entity';
+import { Ticket } from '../entities/ticket.entity';
+import { Purchase } from '../entities/purchase.entity';
+import { Draw } from '../entities/draw.entity';
+import { Claim } from '../entities/claim.entity';
+import { GameGateway } from '../gateway/game.gateway';
+
+import {
+  CreateRoomDto,
+  JoinRoomDto,
+  BuyCardsDto,
+  StartRoomDto,
+  ClaimDto,
+} from './dto';
+
+import {
+  generateBingo75Card,
+  hasBingo,
+  hasLine,
+  shuffle,
+  range,
+  hasFourCorners,
+} from './bingo';
+import { randomBytes } from 'crypto';
+
+type TimerInfo = {
+  timer: NodeJS.Timeout | null;
+  bag: number[];
+  order: number;
+};
+
+type PrizeKind = 'line' | 'corners' | 'bingo';
+
+@Injectable()
+export class RoomsService {
+  constructor(
+    @InjectRepository(User) private readonly usersRepo: Repository<User>,
+    @InjectRepository(Room) private readonly roomsRepo: Repository<Room>,
+    @InjectRepository(RoomParticipant)
+    private readonly rpartsRepo: Repository<RoomParticipant>,
+    @InjectRepository(Ticket) private readonly ticketsRepo: Repository<Ticket>,
+    @InjectRepository(Purchase)
+    private readonly purchasesRepo: Repository<Purchase>,
+    @InjectRepository(Draw) private readonly drawsRepo: Repository<Draw>,
+    @InjectRepository(Claim) private readonly claimsRepo: Repository<Claim>,
+    private readonly gateway: GameGateway,
+  ) {}
+
+  private timers = new Map<string, TimerInfo>();
+  private readonly ALL_NUMBERS: number[] = Array.from({ length: 75 }, (_, i) => i + 1);
+
+  // === PROGRAMACIÓN DE SALA (nuevo) ===
+  private scheduleTimers = new Map<string, NodeJS.Timeout>();
+
+  // --------- Helpers de meta (calendar y premios) ----------
+  private buildPublicMeta(room: Room) {
+    const m = (room.meta ?? {}) as any;
+
+    // Defaults desde ENV si no hay configuración
+    const PRIZE_LINE    = Number(process.env.PRIZE_LINE ?? 100);
+    const PRIZE_CORNERS = Number(process.env.PRIZE_CORNERS ?? 80);
+    const PRIZE_BINGO   = Number(process.env.PRIZE_BINGO ?? 300);
+
+    // Permite dos formatos en BD:
+    // 1) prizes: { line: 5000, corners: 3000, bingo: 10000 }
+    // 2) prizes: { line: { amount: 5000, label: 'Línea' }, ... }
+    const normalizePrize = (val: any, defAmount: number, defLabel: string) => {
+      if (val == null) return { amount: defAmount, label: defLabel };
+      if (typeof val === 'number') return { amount: Number(val), label: defLabel };
+      if (typeof val === 'object') {
+        return {
+          amount: Number(val.amount ?? defAmount),
+          label: String(val.label ?? defLabel),
+        };
+      }
+      return { amount: defAmount, label: defLabel };
+    };
+
+    const prizes = {
+      line:    normalizePrize(m?.prizes?.line,    PRIZE_LINE,    'Línea'),
+      corners: normalizePrize(m?.prizes?.corners, PRIZE_CORNERS, 'Esquinas'),
+      bingo:   normalizePrize(m?.prizes?.bingo,   PRIZE_BINGO,   'Bingo'),
+    };
+
+    // Calendar: usa meta.calendar si existe; si no, toma scheduledStartAt
+    const calendar = Array.isArray(m?.calendar)
+      ? m.calendar
+      : (room.scheduledStartAt ? [room.scheduledStartAt.toISOString()] : []);
+
+    return {
+      ...m,
+      prizes,
+      calendar,
+    };
+  }
+
+  // ===================== CREACIÓN / JOIN / COMPRA =====================
+
+  async createRoom(dto: CreateRoomDto, appUrl: string) {
+    const host = this.usersRepo.create({
+      name: dto.hostName,
+      balance: Number(process.env.INITIAL_CREDITS || 1000),
+    });
+    await this.usersRepo.save(host);
+
+    const token = randomBytes(8).toString('hex');
+    const room = this.roomsRepo.create({
+      host,
+      token,
+      status: 'waiting',
+      gameType: '75',
+    });
+    await this.roomsRepo.save(room);
+
+    const rp = this.rpartsRepo.create({ room, user: host });
+    await this.rpartsRepo.save(rp);
+
+    const cleaned = appUrl.replace(/\/+$/, '');
+    const inviteUrl = `${cleaned}/invite/${token}`;
+
+    this.gateway.broadcastRoomCreated({
+      roomId: room.id,
+      token,
+      hostUserId: host.id,
+      inviteUrl,
+    });
+
+    return { roomId: room.id, token, inviteUrl, hostUserId: host.id };
+  }
+
+  async joinRoom(dto: JoinRoomDto) {
+    const room = await this.roomsRepo.findOne({
+      where: { token: dto.token },
+      relations: ['host'],
+    });
+    if (!room) throw new NotFoundException('Sala no encontrada');
+
+    const user = this.usersRepo.create({
+      name: dto.playerName,
+      balance: Number(process.env.INITIAL_CREDITS || 1000),
+    });
+    await this.usersRepo.save(user);
+
+    try { await this.rpartsRepo.save(this.rpartsRepo.create({ room, user })); } catch {}
+
+    this.gateway.broadcastPlayerJoined(room.id, {
+      userId: user.id,
+      name: user.name,
+      balance: user.balance,
+    });
+
+    return {
+      roomId: room.id,
+      userId: user.id,
+      balance: user.balance,
+      status: room.status,
+    };
+  }
+
+  async buyCards(roomId: string, dto: BuyCardsDto) {
+    const [room, user] = await Promise.all([
+      this.roomsRepo.findOne({ where: { id: roomId }, relations: ['host'] }),
+      this.usersRepo.findOne({ where: { id: dto.userId } }),
+    ]);
+
+    if (!room) throw new NotFoundException('Sala no encontrada');
+    if (!user) throw new NotFoundException('Usuario no encontrado');
+
+    if (room.status !== 'waiting') {
+      throw new BadRequestException('La compra solo está permitida antes de iniciar');
+    }
+
+    const price = Number(process.env.CARD_PRICE || 100);
+    const total = price * dto.quantity;
+    if (user.balance < total) throw new BadRequestException('Fondos insuficientes');
+
+    user.balance -= total;
+    await this.usersRepo.save(user);
+
+    await this.purchasesRepo.save(
+      this.purchasesRepo.create({
+        user,
+        room,
+        quantity: dto.quantity,
+        totalCost: total,
+      }),
+    );
+
+    const tickets: Ticket[] = [];
+    for (let i = 0; i < dto.quantity; i++) {
+      const grid = generateBingo75Card(); // 5x5
+      const t = this.ticketsRepo.create({ room, user, grid, status: 'active' });
+      tickets.push(await this.ticketsRepo.save(t));
+    }
+
+    this.gateway.broadcastPurchase(roomId, {
+      userId: user.id,
+      quantity: dto.quantity,
+      tickets: tickets.map(t => ({ id: t.id, grid: t.grid })),
+      newBalance: user.balance,
+    });
+
+    return { balance: user.balance, tickets };
+  }
+
+  // ======================= INICIO / REANUDAR / ESTADO =======================
+
+  async startRoom(roomId: string, dto: StartRoomDto) {
+    const room = await this.roomsRepo.findOne({
+      where: { id: roomId },
+      relations: ['host'],
+    });
+    if (!room) throw new NotFoundException('Sala no encontrada');
+    if (room.host.id !== dto.userId) throw new ForbiddenException('Solo el anfitrión puede iniciar');
+    if (room.status !== 'waiting') throw new BadRequestException('La sala ya fue iniciada');
+
+    room.status = 'running';
+    room.startedAt = new Date();
+    await this.roomsRepo.save(room);
+
+    const bag = shuffle(range(1, 75));
+    let order = 0;
+    const intervalSec = Number(process.env.DRAW_INTERVAL_SEC || 5);
+
+    const tick = async () => {
+      if (bag.length === 0) {
+        const t = this.timers.get(roomId);
+        if (t?.timer) clearInterval(t.timer);
+        this.timers.delete(roomId);
+        room.status = 'ended';
+        room.endedAt = new Date();
+        await this.roomsRepo.save(room);
+        this.gateway.broadcastRoomStatus(roomId, { status: 'ended', endedAt: room.endedAt });
+        return;
+      }
+
+      const next = bag.shift()!;
+      order += 1;
+
+      await this.drawsRepo.save(this.drawsRepo.create({ room, number: next, order }));
+      this.gateway.broadcastDraw(roomId, { number: next, order });
+
+      const state = await this.getPublicState(roomId);
+      this.gateway.broadcastState(roomId, state);
+    };
+
+    const timer = setInterval(tick, intervalSec * 1000);
+    this.timers.set(roomId, { timer, bag, order });
+
+    this.gateway.broadcastRoomStatus(roomId, { status: 'running', startedAt: room.startedAt });
+    return { started: true };
+  }
+
+  async resumeRoom(roomId: string, dto: StartRoomDto) {
+    const room = await this.roomsRepo.findOne({ where: { id: roomId }, relations: ['host'] });
+    if (!room) throw new NotFoundException('Sala no encontrada');
+    if (room.host.id !== dto.userId) throw new ForbiddenException('Solo el anfitrión puede reanudar');
+    if (room.status === 'ended') throw new BadRequestException('La sala ya terminó');
+
+    let info = this.timers.get(roomId);
+    if (!info) {
+      const drawn = await this.getDrawnNumbers(roomId);
+      const remaining = this.ALL_NUMBERS.filter(n => !new Set(drawn).has(n));
+      info = { timer: null, bag: shuffle(remaining), order: drawn.length };
+      this.timers.set(roomId, info);
+    }
+    if (info.timer) return { resumed: false, reason: 'already_running' };
+
+    const intervalSec = Number(process.env.DRAW_INTERVAL_SEC || 5);
+    const tick = async () => {
+      if (info!.bag.length === 0) {
+        const t = this.timers.get(roomId);
+        if (t?.timer) clearInterval(t.timer);
+        this.timers.delete(roomId);
+        room.status = 'ended';
+        room.endedAt = new Date();
+        await this.roomsRepo.save(room);
+        this.gateway.broadcastRoomStatus(roomId, { status: 'ended', endedAt: room.endedAt });
+        return;
+      }
+
+      const next = info!.bag.shift()!;
+      info!.order += 1;
+
+      await this.drawsRepo.save(this.drawsRepo.create({ room, number: next, order: info!.order }));
+      this.gateway.broadcastDraw(roomId, { number: next, order: info!.order });
+
+      const state = await this.getPublicState(roomId);
+      this.gateway.broadcastState(roomId, state);
+    };
+
+    info.timer = setInterval(tick, intervalSec * 1000);
+    this.timers.set(roomId, info);
+
+    this.gateway.broadcastRoomStatus(roomId, { status: 'running' });
+    return { resumed: true };
+  }
+
+  public async getPublicState(roomId: string) {
+    try {
+      const room = await this.roomsRepo.findOne({
+        where: { id: roomId },
+        relations: ['host'],
+      });
+      if (!room) return { id: roomId, status: 'waiting', drawn: [] as number[] };
+
+      const [participants, purchases, claims, drawn] = await Promise.all([
+        this.rpartsRepo.find({ where: { room: { id: roomId } }, relations: ['user'] }),
+        this.purchasesRepo.find({ where: { room: { id: roomId } }, relations: ['user'] }),
+        this.claimsRepo.find({ where: { room: { id: roomId } }, relations: ['user', 'ticket'] }),
+        this.getDrawnNumbers(roomId),
+      ]);
+
+      // <-- Meta siempre presente (con defaults)
+      const meta = this.buildPublicMeta(room);
+
+      return {
+        id: room.id,
+        code: room.token,
+        status: room.status,
+        drawn,
+        meta, // <<--- para calendar y montos en el front del jugador
+        participants: participants.map(p => ({
+          userId: p.user.id,
+          name: p.user.name,
+          balance: p.user.balance,
+        })),
+        purchases: purchases.map(pr => ({
+          userId: (pr as any).user?.id,
+          userName: (pr as any).user?.name,
+          quantity: (pr as any).quantity,
+          totalCost: (pr as any).totalCost,
+        })),
+        claims: claims.map(c => ({
+          id: (c as any).id,
+          userId: (c as any).user?.id,
+          userName: (c as any).user?.name,
+          ticketId: (c as any).ticket?.id,
+          type: (c as any).type,
+          valid: (c as any).valid,
+          drawIndex: (c as any).drawIndex ?? null,
+        })),
+      };
+    } catch {
+      return { id: roomId, status: 'waiting', drawn: [] as number[] };
+    }
+  }
+
+  // =================== RECLAMOS / VALIDACIÓN ===================
+
+  async claim(roomId: string, dto: ClaimDto) {
+    const [room, user, ticket, draws] = await Promise.all([
+      this.roomsRepo.findOne({ where: { id: roomId } }),
+      this.usersRepo.findOne({ where: { id: dto.userId } }),
+      this.ticketsRepo.findOne({
+        where: { id: dto.ticketId },
+        relations: ['user', 'room'],
+      }),
+      this.drawsRepo.find({ where: { room: { id: roomId } }, order: { order: 'ASC' } }),
+    ]);
+
+    if (!room) throw new NotFoundException('Sala no encontrada');
+    if (!user) throw new NotFoundException('Usuario no encontrado');
+    if (!ticket || ticket.room.id !== roomId || ticket.user.id !== user.id) {
+      throw new ForbiddenException('Cartón inválido');
+    }
+
+    const kind = String((dto as any).type || '').toLowerCase() as PrizeKind;
+    const set = new Set(draws.map(d => d.number));
+    let valid = false;
+    if (kind === 'line')    valid = hasLine(ticket.grid as any, set);
+    if (kind === 'bingo')   valid = hasBingo(ticket.grid as any, set);
+    if (kind === 'corners') valid = hasFourCorners(ticket.grid as any, set);
+
+    const drawIndex = draws.length;
+
+    const existingValids = await this.claimsRepo.find({
+      where: { room: { id: roomId }, type: kind as any, valid: true },
+      order: { drawIndex: 'ASC' as any },
+    });
+
+    const firstIdx = existingValids.length ? Math.min(...existingValids.map(c => Number(c.drawIndex ?? 0))) : null;
+
+    if (valid && firstIdx !== null && drawIndex > firstIdx) {
+      valid = false;
+    }
+
+    const claim = this.claimsRepo.create({ room, user, ticket, type: kind as any, valid, drawIndex } as any);
+    await this.claimsRepo.save(claim);
+
+    if (valid) {
+      ticket.status =
+        kind === 'line'    ? 'won_line'    :
+        kind === 'corners' ? 'won_corners' :
+                             'won_bingo';
+      await this.ticketsRepo.save(ticket);
+
+      const becameFirst = firstIdx === null;
+      if (kind === 'line') {
+        if (becameFirst) {
+          const info = this.timers.get(roomId);
+          if (info?.timer) {
+            clearInterval(info.timer);
+            info.timer = null;
+            this.timers.set(roomId, info);
+          }
+          this.gateway.broadcastRoomStatus(roomId, { status: 'running' });
+        }
+      } else if (kind === 'bingo') {
+        if (becameFirst) {
+          const info = this.timers.get(roomId);
+          if (info?.timer) clearInterval(info.timer);
+          this.timers.delete(roomId);
+          room.status = 'ended';
+          room.endedAt = new Date();
+          await this.roomsRepo.save(room);
+          this.gateway.broadcastRoomStatus(roomId, { status: 'ended', endedAt: room.endedAt });
+        }
+      }
+
+      // Usar meta normalizado para calcular premio por cabeza
+      const pubMeta = this.buildPublicMeta(room);
+      const cfg = pubMeta.prizes?.[kind] ?? { amount: 0, label: kind };
+      const prizeTotal = Number(cfg.amount ?? 0);
+
+      const winIndex = firstIdx ?? drawIndex;
+      const coWinners = await this.claimsRepo.find({
+        where: { room: { id: roomId }, type: kind as any, valid: true, drawIndex: winIndex },
+        relations: ['user', 'ticket'],
+      });
+      const perHead = Math.floor(prizeTotal / Math.max(1, coWinners.length));
+
+      // >>> NOMBRE del ganador y datos de premio
+      this.gateway.broadcastWin(roomId, {
+        type: kind,
+        userId: user.id,
+        userName: user.name,           // <--- agregado
+        ticketId: ticket.id,
+        drawIndex,
+        prizePerWinner: perHead,
+        winnersCount: coWinners.length,
+        prizeLabel: cfg.label ?? kind, // <--- útil para UI
+        prizeTotal,                    // opcional, transparencia
+      });
+
+      this.gateway.broadcastState(roomId, await this.getPublicState(roomId));
+    } else {
+      this.gateway.broadcastClaim(roomId, {
+        type: kind,
+        userId: user.id,
+        ticketId: ticket.id,
+        drawIndex,
+        valid: false,
+      });
+      this.gateway.broadcastState(roomId, await this.getPublicState(roomId));
+    }
+
+    return { valid };
+  }
+
+  // ======================= DRAWS MANUAL =======================
+
+  async getDrawnNumbers(roomId: string): Promise<number[]> {
+    const draws = await this.drawsRepo.find({
+      where: { room: { id: roomId } },
+      order: { order: 'ASC' },
+    });
+    return draws.map(d => Number(d.number));
+  }
+
+  async drawNext(roomId: string, hostId?: string): Promise<{ number: number; order: number }> {
+    const room = await this.roomsRepo.findOne({
+      where: { id: roomId },
+      relations: ['host'],
+    });
+    if (!room) throw new NotFoundException('Sala no encontrada');
+    if (hostId && room.host.id !== hostId) {
+      throw new ForbiddenException('Solo el anfitrión puede sortear');
+    }
+    if (room.status !== 'running') {
+      throw new BadRequestException('La sala no está en curso');
+    }
+
+    const drawn = new Set(await this.getDrawnNumbers(roomId));
+    const remaining = this.ALL_NUMBERS.filter(n => !drawn.has(n));
+    if (remaining.length === 0) throw new BadRequestException('No quedan números por sortear');
+
+    const next = remaining[Math.floor(Math.random() * remaining.length)];
+    const order = drawn.size + 1;
+
+    await this.drawsRepo.save(this.drawsRepo.create({ room, number: next, order }));
+
+    this.gateway.broadcastDraw(roomId, { number: next, order });
+
+    const state = await this.getPublicState(roomId);
+    this.gateway.broadcastState(roomId, state);
+
+    return { number: next, order };
+  }
+
+  // ======================= UTIL =======================
+
+  stopAllTimers() {
+    for (const [roomId, t] of this.timers.entries()) {
+      if (t.timer) clearInterval(t.timer);
+      this.timers.delete(roomId);
+    }
+  }
+
+  // ======================= HOST-ONLY: RESET / SCHEDULE =======================
+
+  private async assertHost(roomId: string, userId: string) {
+    const room = await this.roomsRepo.findOne({ where: { id: roomId }, relations: ['host'] });
+    if (!room) throw new NotFoundException('Sala no encontrada');
+    if (!userId || room.host.id !== userId) {
+      throw new ForbiddenException('Solo el anfitrión puede realizar esta acción');
+    }
+    return room;
+  }
+
+  async resetRoom(roomId: string, userId: string) {
+    const room = await this.assertHost(roomId, userId);
+
+    const t = this.timers.get(roomId);
+    if (t?.timer) clearInterval(t.timer);
+    this.timers.delete(roomId);
+
+    const s = this.scheduleTimers.get(roomId);
+    if (s) { clearTimeout(s); this.scheduleTimers.delete(roomId); }
+
+    await this.claimsRepo.delete({ room: { id: roomId } });
+    await this.drawsRepo.delete({ room: { id: roomId } });
+    await this.ticketsRepo.delete({ room: { id: roomId } });
+    await this.purchasesRepo.delete({ room: { id: roomId } });
+
+    room.status = 'waiting';
+    room.startedAt = null as any;
+    room.endedAt = null as any;
+    room.scheduledStartAt = null;
+    await this.roomsRepo.save(room);
+
+    return { ok: true };
+  }
+
+  async scheduleRoom(roomId: string, userId: string, startAtISO: string) {
+    const room = await this.assertHost(roomId, userId);
+
+    const when = new Date(startAtISO);
+    if (Number.isNaN(when.getTime())) {
+      throw new BadRequestException('Fecha/hora inválida');
+    }
+
+    room.scheduledStartAt = when;
+    await this.roomsRepo.save(room);
+    this.gateway.broadcastRoundScheduled(roomId, when.toISOString());
+
+    const prev = this.scheduleTimers.get(roomId);
+    if (prev) clearTimeout(prev);
+
+    const delay = Math.max(0, when.getTime() - Date.now());
+    const timer = setTimeout(async () => {
+      try {
+        await this.resetRoom(roomId, userId);
+        await this.startRoom(roomId, { userId } as any);
+      } catch {
+        // silenciar
+      }
+    }, delay);
+
+    this.scheduleTimers.set(roomId, timer);
+    return { ok: true, startAt: when.toISOString() };
+  }
+
+  async cancelSchedule(roomId: string, userId: string) {
+    const room = await this.assertHost(roomId, userId);
+    const s = this.scheduleTimers.get(roomId);
+    if (s) { clearTimeout(s); this.scheduleTimers.delete(roomId); }
+    room.scheduledStartAt = null;
+    await this.roomsRepo.save(room);
+    return { ok: true };
+  }
+}
+</file>
+
+<file path="src/app.module.ts">
+// src/app.module.ts
+import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
+import { TypeOrmModule } from '@nestjs/typeorm';
+
+import { User } from './entities/user.entity';
+import { Room } from './entities/room.entity';
+import { RoomParticipant } from './entities/room-participant.entity';
+import { Ticket } from './entities/ticket.entity';
+import { Purchase } from './entities/purchase.entity';
+import { Draw } from './entities/draw.entity';
+import { Claim } from './entities/claim.entity';
+
+import { RoomsModule } from './rooms/rooms.module';
+
+@Module({
+  imports: [
+    ConfigModule.forRoot({ isGlobal: true, envFilePath: ['.env'] }),
+    TypeOrmModule.forRootAsync({
+      useFactory: () => ({
+        type: 'postgres',
+        host: process.env.DB_HOST,
+        port: Number(process.env.DB_PORT || 5432),
+        username: process.env.DB_USER,
+        password: process.env.DB_PASS,
+        database: process.env.DB_NAME,
+        ssl: String(process.env.DB_SSL || 'false') === 'true',
+        entities: [User, Room, RoomParticipant, Ticket, Purchase, Draw, Claim],
+        // 🔒 BLOQUEAMOS sincronización y auto-migraciones
+        synchronize: false,
+        migrationsRun: false,
+        autoLoadEntities: false,
+        logging: false,
+        // (opcional) fija el esquema
+        schema: 'public',
+      }),
+    }),
+    TypeOrmModule.forFeature([User, Room, RoomParticipant, Ticket, Purchase, Draw, Claim]),
+    RoomsModule,
+  ],
+})
+export class AppModule {}
+</file>
+
+<file path="src/data-source.ts">
+// src/data-source.ts
+import 'dotenv/config';
+import { DataSource } from 'typeorm';
+
+import { User } from './entities/user.entity';
+import { Room } from './entities/room.entity';
+import { RoomParticipant } from './entities/room-participant.entity';
+import { Ticket } from './entities/ticket.entity';
+import { Purchase } from './entities/purchase.entity';
+import { Draw } from './entities/draw.entity';
+import { Claim } from './entities/claim.entity';
+
+const ssl = String(process.env.DB_SSL || 'false') === 'true';
+
+export default new DataSource({
+  type: 'postgres',
+  host: process.env.DB_HOST,
+  port: Number(process.env.DB_PORT || 5432),
+  username: process.env.DB_USER,
+  password: process.env.DB_PASS,
+  database: process.env.DB_NAME,
+  ssl,
+  entities: [User, Room, RoomParticipant, Ticket, Purchase, Draw, Claim],
+  synchronize: false,
+  logging: false,
+});
+</file>
+
+<file path="src/main.ts">
+// src/main.ts
+import { NestFactory } from '@nestjs/core';
+import { AppModule } from './app.module';
+import { Logger } from '@nestjs/common';
+
+const clean = (v?: string, def = '') =>
+  String(v ?? def)
+    .replace(/^\uFEFF/, '')
+    .replace(/[\u200B-\u200D\u2060]/g, '')
+    .replace(/^[\s"'`]+|[\s"'`]+$/g, '')
+    .trim();
+
+async function ensureDatabaseExistsIfAsked() {
+  const wantBootstrap = String(process.env.DB_BOOTSTRAP || 'false').toLowerCase() === 'true';
+  if (!wantBootstrap) {
+    Logger.log('[DB] Bootstrap desactivado (DB_BOOTSTRAP=false)', 'Bootstrap');
+    return;
+  }
+
+  const { Client } = require('pg');
+  const host    = clean(process.env.DB_HOST, '127.0.0.1');
+  const port    = Number(clean(process.env.DB_PORT, '5432'));
+  const dbName  = clean(process.env.DB_NAME, 'bingo');
+  const appUser = clean(process.env.DB_USER, 'bingo');
+  const appPass = clean(process.env.DB_PASS, 'bingo');
+
+  // Usa SIEMPRE credenciales de admin explícitas para el pre-flight
+  const suUser = clean(process.env.DB_ADMIN_USER, '');
+  const suPass = clean(process.env.DB_ADMIN_PASS, '');
+  const suDB   = clean(process.env.DB_ADMIN_DB, 'postgres');
+  if (!suUser) {
+    Logger.warn('[DB] Bootstrap activo pero sin DB_ADMIN_USER; se omite.', 'Bootstrap');
+    return;
+  }
+
+  let cli: any;
+  try {
+    cli = new Client({ host, port, user: suUser, password: suPass, database: suDB });
+    await cli.connect();
+
+    // Rol de app (idempotente)
+    const roleExists = await cli.query('SELECT 1 FROM pg_roles WHERE rolname=$1', [appUser]);
+    if (roleExists.rowCount === 0) {
+      await cli.query(`CREATE ROLE "${appUser}" LOGIN PASSWORD $1`, [appPass]);
+      Logger.log(`[DB] Rol "${appUser}" creado`, 'Bootstrap');
+    } else {
+      await cli.query(`ALTER ROLE "${appUser}" WITH LOGIN PASSWORD $1`, [appPass]);
+      Logger.log(`[DB] Rol "${appUser}" actualizado`, 'Bootstrap');
+    }
+
+    // DB de app (idempotente)
+    const dbExists = await cli.query('SELECT 1 FROM pg_database WHERE datname=$1', [dbName]);
+    if (dbExists.rowCount === 0) {
+      Logger.log(`[DB] Creando base "${dbName}"…`, 'Bootstrap');
+      await cli.query(`CREATE DATABASE "${dbName}" OWNER "${appUser}" TEMPLATE template0 ENCODING 'UTF8'`);
+      Logger.log(`[DB] Base "${dbName}" creada`, 'Bootstrap');
+    } else {
+      Logger.log(`[DB] Base "${dbName}" ya existe`, 'Bootstrap');
+    }
+  } catch (e:any) {
+    Logger.warn(`[DB] Pre-flight omitido: ${e?.message ?? e}`, 'Bootstrap');
+  } finally {
+    if (cli) try { await cli.end(); } catch {}
+  }
+}
+
+async function bootstrap() {
+  await ensureDatabaseExistsIfAsked(); // ← ahora solo corre si lo pedís
+  const app = await NestFactory.create(AppModule, { logger: ['log','warn','error'] });
+  app.enableCors({ origin: '*', credentials: true });
+  await app.listen(Number(process.env.PORT || 3000));
+  console.log(`API on http://localhost:${process.env.PORT || 3000}`);
+}
+bootstrap();
+</file>
+
+<file path=".env.example">
+PORT=3000
+APP_PUBLIC_URL=http://localhost:3000
+
+DB_HOST=localhost
+DB_PORT=5432
+DB_USER=postgres
+DB_PASS=postgres
+DB_NAME=bingo_mvp
+
+# segundos entre sorteos
+DRAW_INTERVAL_SEC=5
+
+# créditos iniciales por nuevo jugador
+INITIAL_CREDITS=1000
+
+# precio por cartón
+CARD_PRICE=100
+</file>
+
+<file path="fix_room_participants.sql">
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+-- Asegurar columnas y nombres
+DO $$
+BEGIN
+  -- joined_at
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema='public' AND table_name='room_participants' AND column_name='joined_at'
+  ) THEN
+    ALTER TABLE public.room_participants ADD COLUMN joined_at timestamp DEFAULT now();
+  END IF;
+
+  -- Renombrar camelCase -> snake_case si existieran
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema='public' AND table_name='room_participants' AND column_name='roomId'
+  ) THEN
+    ALTER TABLE public.room_participants RENAME COLUMN "roomId" TO room_id;
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema='public' AND table_name='room_participants' AND column_name='userId'
+  ) THEN
+    ALTER TABLE public.room_participants RENAME COLUMN "userId" TO user_id;
+  END IF;
+END $$;
+
+-- Quitar FKs viejas (si las hubiera) y recrearlas correctas
+DO $$
+DECLARE r record;
+BEGIN
+  FOR r IN
+    SELECT conname
+    FROM pg_constraint
+    WHERE conrelid = 'public.room_participants'::regclass
+      AND contype = 'f'
+  LOOP
+    EXECUTE format('ALTER TABLE public.room_participants DROP CONSTRAINT %I', r.conname);
+  END LOOP;
+END $$;
+
+-- Tipos y FKs buenas
+ALTER TABLE public.room_participants
+  ALTER COLUMN room_id TYPE uuid USING room_id::uuid,
+  ALTER COLUMN user_id TYPE uuid USING user_id::uuid;
+
+ALTER TABLE public.room_participants
+  ADD CONSTRAINT fk_rp_room FOREIGN KEY (room_id) REFERENCES public.rooms(id) ON DELETE CASCADE,
+  ADD CONSTRAINT fk_rp_user FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+-- Visita rápida
+-- SELECT column_name, data_type FROM information_schema.columns WHERE table_name='room_participants' ORDER BY 1;
+</file>
+
+<file path="nest-cli.json">
+{
+  "collection": "@nestjs/schematics",
+  "sourceRoot": "src"
+}
+</file>
+
+<file path="New Text Document.txt">
+
+</file>
+
+<file path="package.json">
+{
+  "name": "bingo-mvp-backend",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "nest start",
+    "start:dev": "nest start --watch",
+    "build": "nest build",
+    "start:prod": "node dist/main.js",
+    "lint": "eslint .",
+    "typeorm": "ts-node -r tsconfig-paths/register ./node_modules/typeorm/cli",
+    "migration:generate": "typeorm-ts-node-commonjs migration:generate src/migrations/Init -d src/data-source.ts",
+    "migration:run": "typeorm-ts-node-commonjs migration:run -d src/data-source.ts",
+    "migration:revert": "typeorm-ts-node-commonjs migration:revert -d src/data-source.ts"
+  },
+  "dependencies": {
+    "@nestjs/common": "^10.3.0",
+    "@nestjs/config": "^3.2.2",
+    "@nestjs/core": "^10.3.0",
+    "@nestjs/platform-express": "^10.3.0",
+    "@nestjs/platform-socket.io": "^10.3.0",
+    "@nestjs/typeorm": "^10.0.2",
+    "@nestjs/websockets": "^10.3.0",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.14.1",
+    "compression": "^1.8.1",
+    "dotenv": "^16.4.5",
+    "pg": "^8.11.5",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.1",
+    "socket.io": "^4.7.5",
+    "typeorm": "^0.3.20",
+    "typeorm-naming-strategies": "^4.1.0",
+    "uuid": "^9.0.1"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "^10.4.9",
+    "@nestjs/schematics": "^10.1.3",
+    "@nestjs/testing": "^10.3.0",
+    "@types/compression": "^1.8.1",
+    "@types/node": "^20.19.13",
+    "@types/uuid": "^9.0.7",
+    "ts-node": "^10.9.2",
+    "tsconfig-paths": "^4.2.0",
+    "typescript": "^5.9.2",
+    "typeorm-ts-node-commonjs": "^0.0.6"
+  }
+}
+</file>
+
+<file path="provision_bingo_min.sql">
+-- 1) Rol 'bingo' si no existe
+DO $
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'bingo') THEN
+    CREATE ROLE bingo LOGIN PASSWORD 'bingo';
+  END IF;
+END
+$;
+
+-- 2) DB 'bingo' si no existe (esto NO se puede en DO cls; usamos \gexec de psql)
+SELECT 'CREATE DATABASE bingo OWNER bingo TEMPLATE template0 ENCODING ''UTF8'''
+WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'bingo');
+\gexec
+</file>
+
+<file path="provision_bingo.sql">
+-- provision_bingo.sql (sin dblink)
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'bingo') THEN
+    CREATE ROLE bingo LOGIN PASSWORD 'bingo';
+  ELSE
+    ALTER ROLE bingo WITH LOGIN PASSWORD 'bingo';
+  END IF;
+END$$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'bingo') THEN
+    EXECUTE 'CREATE DATABASE bingo OWNER bingo TEMPLATE template0 ENCODING ''UTF8''';
+  END IF;
+END$$;
+
+\connect bingo postgres
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+ALTER SCHEMA public OWNER TO bingo;
+GRANT ALL ON SCHEMA public TO bingo;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO bingo;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO bingo;
+</file>
+
+<file path="repair_bingo.ps1">
+# ===========================
+# repair_bingo.ps1  (Windows PowerShell)
+# Repara/crea DB 'bingo' + esquema completo de forma idempotente.
+# ===========================
+$ErrorActionPreference = 'Stop'
+
+# --- Config ---
+$PGHOST       = '127.0.0.1'
+$PGPORT       = 5432
+$SUPER_USER   = 'postgres'
+$SUPER_PASS   = 'postgres'
+$APP_USER     = 'bingo'
+$APP_PASS     = 'bingo'
+$DBNAME       = 'bingo'
+
+Write-Host "[0] psql => " ((Get-Command psql).Path) -ForegroundColor Cyan
+
+function Run-PSQL {
+  param(
+    [string]$User,
+    [string]$Pass,
+    [string]$Db,
+    [string]$Sql,
+    [switch]$Quiet
+  )
+  $prev = $env:PGPASSWORD
+  try {
+    $env:PGPASSWORD = $Pass
+    # -X y --no-psqlrc para evitar que psqlrc/meta rompa la salida
+    $args = @('-h', $PGHOST, '-p', $PGPORT, '-U', $User, '-d', $Db, '-X', '--no-psqlrc', '-v', 'ON_ERROR_STOP=1', '-c', $Sql)
+    if (-not $Quiet) { Write-Host ("psql " + ($args -join ' ')) -ForegroundColor DarkGray }
+    & psql @args
+    if ($LASTEXITCODE -ne 0) { throw "psql exitcode $LASTEXITCODE" }
+  } finally {
+    $env:PGPASSWORD = $prev
+  }
+}
+
+function Run-PSQL-Query {
+  param(
+    [string]$User,
+    [string]$Pass,
+    [string]$Db,
+    [string]$Sql
+  )
+  $prev = $env:PGPASSWORD
+  try {
+    $env:PGPASSWORD = $Pass
+    # Usar -tAc para “solo valores”, y normalizar SIEMPRE la salida
+    $args = @('-h', $PGHOST, '-p', $PGPORT, '-U', $User, '-d', $Db, '-X', '--no-psqlrc', '-tAc', $Sql)
+    $raw = & psql @args 2>$null
+    if ($LASTEXITCODE -ne 0) { throw "psql exitcode $LASTEXITCODE" }
+    # $raw puede ser $null o array; normalizamos a string
+    $text = ($raw | Out-String)
+    if ($null -eq $text) { return "" }
+    return $text.Trim()
+  } finally {
+    $env:PGPASSWORD = $prev
+  }
+}
+
+# 1) Rol APP
+Write-Host "`n[1] Rol $APP_USER ..." -ForegroundColor Cyan
+$role = Run-PSQL-Query -User $SUPER_USER -Pass $SUPER_PASS -Db 'postgres' -Sql "SELECT 1 FROM pg_roles WHERE rolname='$APP_USER';"
+if ([string]::IsNullOrWhiteSpace($role)) {
+  Write-Host " - creando rol $APP_USER" -ForegroundColor Green
+  Run-PSQL -User $SUPER_USER -Pass $SUPER_PASS -Db 'postgres' -Sql "CREATE ROLE $APP_USER LOGIN PASSWORD '$APP_PASS';" -Quiet
+} else {
+  Write-Host " - existe, actualizando password" -ForegroundColor Green
+  Run-PSQL -User $SUPER_USER -Pass $SUPER_PASS -Db 'postgres' -Sql "ALTER ROLE $APP_USER WITH LOGIN PASSWORD '$APP_PASS';" -Quiet
+}
+
+# 2) Base de datos
+Write-Host "`n[2] Base $DBNAME ..." -ForegroundColor Cyan
+$db = Run-PSQL-Query -User $SUPER_USER -Pass $SUPER_PASS -Db 'postgres' -Sql "SELECT 1 FROM pg_database WHERE datname='$DBNAME';"
+if ([string]::IsNullOrWhiteSpace($db)) {
+  Write-Host " - creando DB $DBNAME (OWNER $APP_USER)" -ForegroundColor Green
+  Run-PSQL -User $SUPER_USER -Pass $SUPER_PASS -Db 'postgres' -Sql "CREATE DATABASE $DBNAME OWNER $APP_USER TEMPLATE template0 ENCODING 'UTF8';" -Quiet
+} else {
+  Write-Host " - ya existe" -ForegroundColor Green
+}
+
+# 3) uuid-ossp o fallback pgcrypto
+Write-Host "`n[3] Extensión/uuid ..." -ForegroundColor Cyan
+try {
+  Run-PSQL -User $SUPER_USER -Pass $SUPER_PASS -Db $DBNAME -Sql 'CREATE EXTENSION IF NOT EXISTS "uuid-ossp";' -Quiet
+  Write-Host " - uuid-ossp OK" -ForegroundColor Green
+} catch {
+  Write-Host " - uuid-ossp no disponible; usando pgcrypto + alias" -ForegroundColor Yellow
+  Run-PSQL -User $SUPER_USER -Pass $SUPER_PASS -Db $DBNAME -Sql "CREATE EXTENSION IF NOT EXISTS pgcrypto;" -Quiet
+  $hasFn = Run-PSQL-Query -User $SUPER_USER -Pass $SUPER_PASS -Db $DBNAME -Sql "SELECT 1 FROM pg_proc WHERE proname='uuid_generate_v4';"
+  if ([string]::IsNullOrWhiteSpace($hasFn)) {
+    Run-PSQL -User $SUPER_USER -Pass $SUPER_PASS -Db $DBNAME -Sql @'
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_proc WHERE proname='uuid_generate_v4') THEN
+    EXECUTE 'CREATE OR REPLACE FUNCTION uuid_generate_v4() RETURNS uuid AS $$ SELECT gen_random_uuid() $$ LANGUAGE SQL VOLATILE';
+  END IF;
+END
+$$;
+'@ -Quiet
+  }
+}
+
+# 4) Esquema completo (ENUMs + tablas + columnas) - idempotente
+Write-Host "`n[4] Esquema (ENUMs/Tablas/Columnas) ..." -ForegroundColor Cyan
+$ddl = @'
+DO $do$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname='rooms_status_enum') THEN
+    CREATE TYPE rooms_status_enum AS ENUM ('waiting','running','ended');
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname='ticket_status_enum') THEN
+    CREATE TYPE ticket_status_enum AS ENUM ('active','won_line','won_corners','won_bingo','void');
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname='claims_type_enum') THEN
+    CREATE TYPE claims_type_enum AS ENUM ('line','bingo','corners');
+  END IF;
+END
+$do$;
+
+CREATE TABLE IF NOT EXISTS public.users (
+  id         uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name       varchar(64)  NOT NULL,
+  balance    integer      NOT NULL DEFAULT 0,
+  created_at timestamptz  NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.rooms (
+  id                  uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  token               varchar(64)       NOT NULL,
+  status              rooms_status_enum NOT NULL DEFAULT 'waiting',
+  game_type           varchar(16)       NOT NULL DEFAULT '75',
+  created_at          timestamptz       NOT NULL DEFAULT now(),
+  started_at          timestamptz       NULL,
+  ended_at            timestamptz       NULL,
+  host_id             uuid              NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  scheduled_start_at  timestamp         NULL,
+  meta                jsonb             NULL
+);
+
+DO $do$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname='rooms_token_key'
+  ) THEN
+    ALTER TABLE public.rooms ADD CONSTRAINT rooms_token_key UNIQUE (token);
+  END IF;
+END
+$do$;
+
+CREATE TABLE IF NOT EXISTS public.room_participants (
+  id        uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  room_id   uuid NOT NULL REFERENCES public.rooms(id) ON DELETE CASCADE,
+  user_id   uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  joined_at timestamptz NOT NULL DEFAULT now()
+);
+
+DO $do$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname='room_participants_room_id_user_id_key'
+  ) THEN
+    ALTER TABLE public.room_participants
+      ADD CONSTRAINT room_participants_room_id_user_id_key UNIQUE (room_id, user_id);
+  END IF;
+END
+$do$;
+
+CREATE TABLE IF NOT EXISTS public.tickets (
+  id         uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  room_id    uuid NOT NULL REFERENCES public.rooms(id) ON DELETE CASCADE,
+  user_id    uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  grid       jsonb NOT NULL,
+  status     ticket_status_enum NOT NULL DEFAULT 'active',
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.purchases (
+  id         uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  room_id    uuid NOT NULL REFERENCES public.rooms(id) ON DELETE CASCADE,
+  user_id    uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  quantity   integer NOT NULL,
+  total_cost integer NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.draws (
+  id         uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  room_id    uuid NOT NULL REFERENCES public.rooms(id) ON DELETE CASCADE,
+  number     integer NOT NULL,
+  "order"    integer NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.claims (
+  id         uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  room_id    uuid NOT NULL REFERENCES public.rooms(id) ON DELETE CASCADE,
+  user_id    uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  ticket_id  uuid NOT NULL REFERENCES public.tickets(id) ON DELETE CASCADE,
+  type       claims_type_enum NOT NULL,
+  valid      boolean NOT NULL DEFAULT false,
+  draw_index integer NULL,
+  reason     text    NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- columnas por si faltan
+ALTER TABLE public.rooms            ADD COLUMN IF NOT EXISTS scheduled_start_at timestamp NULL;
+ALTER TABLE public.rooms            ADD COLUMN IF NOT EXISTS meta jsonb NULL;
+UPDATE public.rooms SET meta='{}'::jsonb WHERE meta IS NULL;
+
+ALTER TABLE public.room_participants ADD COLUMN IF NOT EXISTS joined_at timestamptz NOT NULL DEFAULT now();
+ALTER TABLE public.tickets          ADD COLUMN IF NOT EXISTS created_at timestamptz NOT NULL DEFAULT now();
+ALTER TABLE public.purchases        ADD COLUMN IF NOT EXISTS created_at timestamptz NOT NULL DEFAULT now();
+ALTER TABLE public.draws            ADD COLUMN IF NOT EXISTS created_at timestamptz NOT NULL DEFAULT now();
+ALTER TABLE public.claims           ADD COLUMN IF NOT EXISTS created_at timestamptz NOT NULL DEFAULT now();
+ALTER TABLE public.users            ADD COLUMN IF NOT EXISTS created_at timestamptz NOT NULL DEFAULT now();
+'@
+
+# Enviar el DDL por stdin con -f -
+$prev = $env:PGPASSWORD
+try {
+  $env:PGPASSWORD = $SUPER_PASS
+  $ddl | psql -h $PGHOST -p $PGPORT -U $SUPER_USER -d $DBNAME -X --no-psqlrc -v ON_ERROR_STOP=1 -f -
+  if ($LASTEXITCODE -ne 0) { throw "psql exitcode $LASTEXITCODE" }
+} finally {
+  $env:PGPASSWORD = $prev
+}
+
+# 5) Permisos para el usuario app
+Write-Host "`n[5] Permisos ..." -ForegroundColor Cyan
+Run-PSQL -User $SUPER_USER -Pass $SUPER_PASS -Db $DBNAME -Sql "ALTER SCHEMA public OWNER TO $APP_USER;" -Quiet
+Run-PSQL -User $SUPER_USER -Pass $SUPER_PASS -Db $DBNAME -Sql "GRANT ALL ON SCHEMA public TO $APP_USER;" -Quiet
+
+# 6) Verificación final
+Write-Host "`n[6] Verificación ..." -ForegroundColor Cyan
+$tables = Run-PSQL-Query -User $APP_USER -Pass $APP_PASS -Db $DBNAME -Sql "select table_name from information_schema.tables where table_schema='public' order by 1;"
+Write-Host ($tables -replace "`n", "`r`n")
+Write-Host "`nOK: esquema listo." -ForegroundColor Green
+</file>
+
+<file path="schema_bootstrap.sql">
+-- C:\backend\schema_bootstrap.sql
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+-- Rol app (idempotente)
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'bingo') THEN
+    CREATE ROLE bingo LOGIN PASSWORD 'bingo';
+  END IF;
+END $$;
+
+-- Tipos enum (idempotentes)
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'rooms_status_enum') THEN
+    CREATE TYPE rooms_status_enum AS ENUM ('waiting','running','ended');
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'claims_type_enum') THEN
+    CREATE TYPE claims_type_enum AS ENUM ('line','bingo','corners');
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'ticket_status_enum') THEN
+    CREATE TYPE ticket_status_enum AS ENUM ('active','won_line','won_bingo','won_corners');
+  END IF;
+END $$;
+
+-- Tablas (idempotentes)
+CREATE TABLE IF NOT EXISTS users (
+  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name varchar(255) NOT NULL,
+  balance integer NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS rooms (
+  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  token varchar(64) NOT NULL UNIQUE,
+  status rooms_status_enum NOT NULL DEFAULT 'waiting',
+  game_type varchar(16) NOT NULL DEFAULT '75',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  started_at timestamptz,
+  ended_at timestamptz,
+  host_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS room_participants (
+  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  room_id uuid NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  UNIQUE (room_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS tickets (
+  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  room_id uuid NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  grid jsonb NOT NULL,
+  status ticket_status_enum NOT NULL DEFAULT 'active'
+);
+
+CREATE TABLE IF NOT EXISTS purchases (
+  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  room_id uuid NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  quantity integer NOT NULL,
+  total_cost integer NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS draws (
+  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  room_id uuid NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+  number integer NOT NULL,
+  "order" integer NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS claims (
+  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  room_id uuid NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  ticket_id uuid NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+  type claims_type_enum NOT NULL,
+  valid boolean NOT NULL,
+  draw_index integer,
+  reason text
+);
+
+-- Permisos mķnimos para el rol de app
+GRANT USAGE, CREATE ON SCHEMA public TO bingo;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO bingo;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO bingo;
+</file>
+
+<file path="schema_rooms.sql">
+--
+-- PostgreSQL database dump
+--
+
+-- Dumped from database version 16.8
+-- Dumped by pg_dump version 16.8
+
+SET statement_timeout = 0;
+SET lock_timeout = 0;
+SET idle_in_transaction_session_timeout = 0;
+SET client_encoding = 'UTF8';
+SET standard_conforming_strings = on;
+SELECT pg_catalog.set_config('search_path', '', false);
+SET check_function_bodies = false;
+SET xmloption = content;
+SET client_min_messages = warning;
+SET row_security = off;
+
+SET default_tablespace = '';
+
+SET default_table_access_method = heap;
+
+--
+-- Name: rooms; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.rooms (
+    id uuid DEFAULT public.uuid_generate_v4() NOT NULL,
+    token character varying(64) NOT NULL,
+    status public.rooms_status_enum DEFAULT 'waiting'::public.rooms_status_enum NOT NULL,
+    game_type character varying(16) DEFAULT '75'::character varying NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    started_at timestamp with time zone,
+    ended_at timestamp with time zone,
+    host_id uuid NOT NULL,
+    meta jsonb
+);
+
+
+ALTER TABLE public.rooms OWNER TO postgres;
+
+--
+-- Name: rooms rooms_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.rooms
+    ADD CONSTRAINT rooms_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: rooms rooms_token_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.rooms
+    ADD CONSTRAINT rooms_token_key UNIQUE (token);
+
+
+--
+-- Name: rooms rooms_host_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.rooms
+    ADD CONSTRAINT rooms_host_id_fkey FOREIGN KEY (host_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: TABLE rooms; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE public.rooms TO bingo;
+
+
+--
+-- PostgreSQL database dump complete
+--
+</file>
+
+<file path="setup-postgres-bingo.ps1">
+param(
+  [ValidateSet('service')]
+  [string]$Mode = 'service',
+  [string]$DbHost = '127.0.0.1',
+  [int]$DbPort = 5432,
+
+  # Superusuario para crear rol/DB (ajústalo a tu instalación)
+  [string]$SuperUser = 'postgres',
+  [string]$SuperPass = 'postgres',
+
+  # Usuario/BD de la app
+  [string]$AppUser = 'bingo',
+  [string]$AppPass = 'bingo',
+  [string]$DatabaseName = 'bingo',
+
+  [switch]$RunMigrations
+)
+
+function Write-OK   ($m){ Write-Host "[ OK ] $m"   -ForegroundColor Green }
+function Write-Info ($m){ Write-Host "[INFO] $m"  -ForegroundColor Cyan }
+function Write-Err  ($m){ Write-Host "[ERR ] $m"  -ForegroundColor Red }
+
+function Find-Psql {
+  $cmd = Get-Command psql -ErrorAction SilentlyContinue
+  if ($cmd) { return $cmd.Source }
+  $cands = @(
+    "C:\Program Files\PostgreSQL\16\bin\psql.exe",
+    "C:\Program Files\PostgreSQL\15\bin\psql.exe",
+    "C:\Program Files\PostgreSQL\14\bin\psql.exe"
+  )
+  foreach ($p in $cands) { if (Test-Path $p) { return $p } }
+  return $null
+}
+
+# Evita el nombre reservado $Host de PowerShell
+function Wait-TcpPort {
+  param([string]$TargetHost, [int]$Port, [int]$TimeoutSec = 90)
+  Write-Info "Esperando PostgreSQL en $TargetHost`:$Port (timeout ${TimeoutSec}s)..."
+  $stop = (Get-Date).AddSeconds($TimeoutSec)
+  while ((Get-Date) -lt $stop) {
+    try {
+      if (Test-NetConnection -ComputerName $TargetHost -Port $Port -InformationLevel Quiet) {
+        Write-OK "Puerto accesible."; return $true
+      }
+    } catch {}
+    Start-Sleep -Milliseconds 600
+  }
+  Write-Err "No se pudo conectar a $TargetHost`:$Port dentro del tiempo."
+  return $false
+}
+
+# ---------- FIX PRINCIPAL: psql con ArgumentList real ----------
+function Exec-psql {
+  param([string]$Db='postgres', [string]$Sql='', [switch]$Quiet)
+
+  $psql = Find-Psql
+  if (-not $psql) { throw "psql no encontrado. Instala PostgreSQL o agrega psql al PATH." }
+
+  $env:PGPASSWORD = $SuperPass
+
+  $args = @(
+    '-X', '-h', $DbHost, '-p', "$DbPort", '-U', $SuperUser, '-d', $Db
+  )
+  if ($Quiet) { $args += @('-A','-t') }
+  $args += @('-v','ON_ERROR_STOP=1','-c', $Sql)
+
+  # Redirigimos para capturar ambos streams sin problemas de quoting
+  $tmpOut = [System.IO.Path]::GetTempFileName()
+  $tmpErr = [System.IO.Path]::GetTempFileName()
+  try {
+    & $psql @args 1> $tmpOut 2> $tmpErr
+    $code = $LASTEXITCODE
+    $stdout = (Get-Content -Raw -Path $tmpOut) 2>$null
+    $stderr = (Get-Content -Raw -Path $tmpErr) 2>$null
+
+    if ($code -ne 0) {
+      Write-Err "psql falló sobre DB='$Db' (User='$SuperUser')."
+      if ($stderr) { Write-Host $stderr -ForegroundColor Red }
+      if ($stdout) { Write-Host $stdout -ForegroundColor DarkRed }
+      throw "psql exit code $code"
+    }
+    if (-not $Quiet -and $stdout) { Write-Host $stdout }
+    return $stdout
+  }
+  finally {
+    Remove-Item $tmpOut,$tmpErr -ErrorAction SilentlyContinue
+  }
+}
+# ----------------------------------------------------------------
+
+function Test-NpmScript { param([string]$ScriptName)
+  try {
+    $pkg = Get-Content -Raw -Path ".\package.json" | ConvertFrom-Json
+    return ($pkg.scripts.PSObject.Properties.Name -contains $ScriptName)
+  } catch { return $false }
+}
+
+# ---------------- MAIN ----------------
+$psqlPath = Find-Psql
+if (-not $psqlPath) { throw "psql no encontrado. Instala PostgreSQL." }
+Write-OK "psql: $psqlPath"
+
+if ($Mode -eq 'service') {
+  try {
+    $svc = Get-Service -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^postgres' }
+    if ($svc -and $svc.Status -ne 'Running') { Start-Service $svc.Name }
+    Write-OK "Servicio de PostgreSQL ya está ejecutándose."
+  } catch {}
+}
+
+if (-not (Wait-TcpPort -TargetHost $DbHost -Port $DbPort -TimeoutSec 90)) { exit 1 }
+
+Write-Info "Probando conexión a BD 'postgres'..."
+Exec-psql -Db 'postgres' -Sql "SELECT version();"
+Write-OK "Conexión ok."
+
+Write-Info "Creando rol '$AppUser' y base '$DatabaseName' si no existen..."
+
+# 1) Rol
+$existsRole = (Exec-psql -Db 'postgres' -Sql ("SELECT 1 FROM pg_roles WHERE rolname = '{0}';" -f $AppUser.Replace("'","''")) -Quiet).Trim()
+if ($existsRole -ne '1') {
+  Exec-psql -Db 'postgres' -Sql ("CREATE ROLE {0} LOGIN PASSWORD '{1}';" -f $AppUser.Replace("'","''"), $AppPass.Replace("'","''"))
+  Write-OK "Rol '$AppUser' creado."
+} else {
+  Write-OK "Rol '$AppUser' ya existe."
+}
+
+# 2) BD
+$existsDb = (Exec-psql -Db 'postgres' -Sql ("SELECT 1 FROM pg_database WHERE datname = '{0}';" -f $DatabaseName.Replace("'","''")) -Quiet).Trim()
+if ($existsDb -ne '1') {
+  Exec-psql -Db 'postgres' -Sql ("CREATE DATABASE {0} OWNER {1};" -f $DatabaseName, $AppUser)
+  Write-OK "Base '$DatabaseName' creada."
+} else {
+  Write-OK "Base '$DatabaseName' ya existe."
+}
+
+# 3) Permisos
+Exec-psql -Db $DatabaseName -Sql ("REVOKE CREATE ON SCHEMA public FROM PUBLIC;")
+Exec-psql -Db $DatabaseName -Sql ("GRANT CONNECT ON DATABASE {0} TO {1};" -f $DatabaseName, $AppUser)
+Exec-psql -Db $DatabaseName -Sql ("GRANT USAGE   ON SCHEMA public TO {0};" -f $AppUser)
+Exec-psql -Db $DatabaseName -Sql ("ALTER DATABASE {0} OWNER TO {1};" -f $DatabaseName, $AppUser)
+
+Write-Info "Verificación rápida de tablas:"
+Exec-psql -Db $DatabaseName -Sql "SELECT COALESCE(to_regclass('public.rooms')::text,'(sin tabla rooms)') AS rooms, COALESCE(to_regclass('public.users')::text,'(sin tabla users)') AS users;"
+
+# 4) Migraciones
+if ($RunMigrations) {
+  if (Test-Path .\package.json) {
+    if (Test-NpmScript 'migration:run') {
+      Write-Info "Ejecutando: npm run migration:run"
+      npm run migration:run
+      if ($LASTEXITCODE -ne 0) { Write-Err "Fallo npm run migration:run"; exit 1 }
+    } elseif (Test-NpmScript 'typeorm:migration:run') {
+      Write-Info "Ejecutando: npm run typeorm:migration:run"
+      npm run typeorm:migration:run
+      if ($LASTEXITCODE -ne 0) { Write-Err "Fallo npm run typeorm:migration:run"; exit 1 }
+    } else {
+      Write-Info "No hay script de migraciones en package.json. Saltando."
+    }
+  } else {
+    Write-Info "No hay package.json en este directorio. Saltando migraciones."
+  }
+}
+
+Write-OK ("Todo listo. Backend puede conectarse a postgres://{0}:****@{1}:{2}/{3}" -f $AppUser,$DbHost,$DbPort,$DatabaseName)
+</file>
+
+<file path="tsconfig.json">
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "declaration": false,
+    "removeComments": true,
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "allowSyntheticDefaultImports": true,
+    "target": "ES2021",
+    "sourceMap": true,
+    "outDir": "./dist",
+    "baseUrl": "./",
+    "incremental": true
+  },
+  "exclude": ["node_modules", "dist"]
+}
+</file>
+
+</files>

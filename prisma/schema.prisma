@@ -1,0 +1,293 @@
+// =============================================================================
+//  BINGO 75 — Prisma Schema (Etapa 1)
+//  Motor de Sorteo Determinístico Stateless + Pagos Híbridos + Roles
+// =============================================================================
+//
+//  PORTABILIDAD: este schema usa tipos que funcionan tanto en SQLite (dev
+//  local / sandbox) como en PostgreSQL serverless (Neon, producción):
+//    - `Json`  -> mapea a `jsonb` en Neon (ballSequence, grid, meta, raw)
+//    - columnas "enum-like" son `String` restringidas en la capa de app con
+//      uniones de TypeScript (evita migraciones de enum en serverless).
+//
+//  UPGRADE A NEON PURO (opcional):
+//    1. `datasource db { provider = "postgresql" }`
+//    2. `DATABASE_URL="postgresql://user:pass@ep-xxx.neon.tech/db?sslmode=require"`
+//    3. (opcional) `ballSequence Int[]` en lugar de `Json` y enums nativos.
+//    El resto del código no cambia: el motor determinístico lee ballSequence
+//    como number[] sin importar el tipo físico de almacenamiento.
+// =============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  USERS & ROLES
+//  Autenticación real: email + passwordHash (bcrypt) con sesión JWT en
+//  cookie HTTP-only. role gobierna host/admin. balance = créditos enteros.
+// ─────────────────────────────────────────────────────────────────────────────
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String? // null => cuenta solo magic-link (futuro)
+  role         String   @default("PLAYER") // PLAYER | HOST | ADMIN
+  balance      Int      @default(0) // créditos (enteros, sin decimales)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  hostedRooms       Room[]
+  participations    RoomParticipant[]
+  tickets           Ticket[]
+  purchases         Purchase[]
+  claims            Claim[]
+  payments          PaymentTransaction[]
+  transferRequests  TransferRequest[]    @relation("TransferRequestOwner")
+  reviewedTransfers TransferRequest[]    @relation("TransferRequestReviewer")
+  ledgerEntries     LedgerEntry[]
+
+  @@index([role])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  ROOM — Motor Determinístico Stateless (CERO timers en RAM)
+//
+//  Al iniciar (start): se genera y persiste ballSequence = permutación
+//  aleatoria completa de [1..75]. Las bolillas reveladas en cualquier
+//  instante se CALCULAN, no se guardan en memoria:
+//
+//     effectiveNow   = pausedAt ?? serverNow
+//     elapsedMs      = effectiveNow - startedAt - pausedElapsedMs
+//     revealedCount  = floor(elapsedMs / (intervalSec * 1000))
+//     drawnNumbers   = ballSequence.slice(0, revealedCount)
+//
+//  Al cantar la 1ra Línea válida => pausedAt = now() (congela el reloj).
+//  Al reanudar (resume)          => pausedElapsedMs += (now - pausedAt);
+//                                    pausedAt = null.
+//  No hay setInterval, no hay Map en memoria: sobrevive reinicios y es
+//  compatible con serverless / multi-instancia.
+// ─────────────────────────────────────────────────────────────────────────────
+model Room {
+  id       String @id @default(cuid())
+  token    String @unique // código corto de invitación (compartible)
+  status   String @default("WAITING") // WAITING | RUNNING | PAUSED | ENDED
+  gameType String @default("75")
+  hostId   String
+  host     User   @relation(fields: [hostId], references: [id], onDelete: Cascade)
+
+  // ── Reloj determinístico ───────────────────────────────────────────────
+  ballSequence    Json? // number[] permutación [1..75] (source of truth)
+  startedAt       DateTime? // inicio del reloj de sorteo
+  pausedAt        DateTime? // != null => reloj congelado
+  pausedElapsedMs Int       @default(0) // ms pausados acumulados
+  intervalSec     Int       @default(5) // segundos entre bolillas
+
+  // ── Economía configurable por sala ─────────────────────────────────────
+  cardPrice    Int    @default(100)
+  prizeLine    Int    @default(100)
+  prizeCorners Int    @default(80)
+  prizeBingo   Int    @default(300)
+  currency     String @default("ARS")
+
+  // ── Ciclo de vida ──────────────────────────────────────────────────────
+  endedAt          DateTime?
+  scheduledStartAt DateTime? // auto-inicio opcional (cron externo)
+  currentRound     Int       @default(1) // soporta re-compra entre rondas
+  meta             Json? // calendario, notas, config personalizada
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  participants RoomParticipant[]
+  tickets      Ticket[]
+  purchases    Purchase[]
+  draws        Draw[]
+  claims       Claim[]
+
+  @@index([status])
+  @@index([hostId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  ROOM PARTICIPANTS — quién está en cada sala (1 usuario x 1 sala)
+// ─────────────────────────────────────────────────────────────────────────────
+model RoomParticipant {
+  id       String   @id @default(cuid())
+  roomId   String
+  userId   String
+  joinedAt DateTime @default(now())
+
+  room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, userId])
+  @@index([userId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  PURCHASE — cabecera agregada de una transacción buyCards
+//  (quantity tickets x unitPrice = totalCost). Para auditoría + re-compra.
+// ─────────────────────────────────────────────────────────────────────────────
+model Purchase {
+  id        String   @id @default(cuid())
+  roomId    String
+  userId    String
+  quantity  Int
+  unitPrice Int
+  totalCost Int
+  round     Int      @default(1)
+  createdAt DateTime @default(now())
+
+  room    Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tickets Ticket[]
+
+  @@index([roomId])
+  @@index([userId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  TICKET — cartón 5x5 (B:1-15, I:16-30, N:31-45, G:46-60, O:61-75)
+//  grid = (number|null)[][] con grid[2][2] = null (centro libre).
+// ─────────────────────────────────────────────────────────────────────────────
+model Ticket {
+  id         String   @id @default(cuid())
+  roomId     String
+  userId     String
+  purchaseId String?
+  grid       Json // (number|null)[][] 5x5
+  status     String   @default("ACTIVE") // ACTIVE|WON_LINE|WON_CORNERS|WON_BINGO|CANCELLED
+  createdAt  DateTime @default(now())
+
+  room     Room      @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  purchase Purchase? @relation(fields: [purchaseId], references: [id], onDelete: SetNull)
+  claims   Claim[]
+
+  @@index([roomId])
+  @@index([userId])
+  @@index([status])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  DRAW — historial/auditoría append-only de bolillas reveladas.
+//  El estado canónico se CALCULA desde ballSequence; esta tabla lo persiste
+//  para replay/auditoría. Restricciones únicas evitan duplicados.
+// ─────────────────────────────────────────────────────────────────────────────
+model Draw {
+  id         String   @id @default(cuid())
+  roomId     String
+  number     Int
+  order      Int // índice 1-based de revelado
+  revealedAt DateTime @default(now())
+
+  room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, order])
+  @@unique([roomId, number])
+  @@index([roomId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  CLAIM — reclamo de premio (LINE | CORNERS | BINGO)
+//  drawIndex = revealedCount al momento del claim (co-ganadores comparten
+//  drawIndex => premio dividido). prizeAwarded audita cuánto se acreditó.
+// ─────────────────────────────────────────────────────────────────────────────
+model Claim {
+  id           String   @id @default(cuid())
+  roomId       String
+  userId       String
+  ticketId     String?
+  type         String // LINE | CORNERS | BINGO
+  valid        Boolean  @default(false)
+  drawIndex    Int // revealedCount en el instante del claim
+  prizeAwarded Int      @default(0) // créditos acreditados (0 si inválido)
+  reason       String?
+  createdAt    DateTime @default(now())
+
+  room   Room    @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ticket Ticket? @relation(fields: [ticketId], references: [id], onDelete: SetNull)
+
+  @@index([roomId, type, valid])
+  @@index([userId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  PAYMENT TRANSACTION — ledger idempotente de recargas.
+//  MercadoPago: externalId = payment id; webhook crea/actualiza aquí.
+//  Transferencia manual: se aprueba desde admin => se crea un row APPROVED.
+//  @@unique([provider, externalId]) garantiza idempotencia (no doble crédito).
+// ─────────────────────────────────────────────────────────────────────────────
+model PaymentTransaction {
+  id          String    @id @default(cuid())
+  userId      String
+  provider    String // MERCADOPAGO | MANUAL_TRANSFER
+  externalId  String? // MP payment id | número de referencia de transferencia
+  amount      Int // créditos a acreditar
+  status      String    @default("PENDING") // PENDING|APPROVED|REJECTED|FAILED
+  raw         Json? // payload del webhook / metadata
+  createdAt   DateTime  @default(now())
+  processedAt DateTime?
+
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transferRequest TransferRequest?
+
+  @@unique([provider, externalId])
+  @@index([userId, status])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  TRANSFER REQUEST — recarga internacional manual pendiente de aprobación.
+//  El usuario registra monto, método/país, referencia y nota/comprobante.
+//  Admin APPROVED => crea PaymentTransaction(APPROVED) + LedgerEntry + crédito.
+// ─────────────────────────────────────────────────────────────────────────────
+model TransferRequest {
+  id              String    @id @default(cuid())
+  userId          String
+  amount          Int // créditos solicitados
+  paymentMethod   String // "Bank Transfer"|"Wise"|"PIX"|"Zelle"|...
+  country         String?
+  referenceNumber String
+  note            String?
+  status          String    @default("PENDING") // PENDING|APPROVED|REJECTED
+  reviewedById    String?
+  reviewedAt      DateTime?
+  createdAt       DateTime  @default(now())
+
+  user                 User                @relation("TransferRequestOwner", fields: [userId], references: [id], onDelete: Cascade)
+  reviewer             User?               @relation("TransferRequestReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  payment              PaymentTransaction? @relation(fields: [paymentTransactionId], references: [id], onDelete: SetNull)
+  paymentTransactionId String?             @unique
+
+  @@index([status])
+  @@index([userId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  LEDGER ENTRY — auditoría append-only de TODA mutación de balance.
+//  Resuelve el bug crítico del repo original (premios nunca acreditados):
+//  cada débito/crédito queda rastreable. amount con signo, balanceAfter snapshot.
+// ─────────────────────────────────────────────────────────────────────────────
+model LedgerEntry {
+  id            String   @id @default(cuid())
+  userId        String
+  type          String // PURCHASE|PRIZE|RECHARGE|REFUND|ADMIN_ADJUST
+  amount        Int // signado: negativo débito, positivo crédito
+  balanceAfter  Int // snapshot post-movimiento
+  roomId        String?
+  referenceType String? // "Purchase"|"Claim"|"PaymentTransaction"|"TransferRequest"
+  referenceId   String?
+  description   String?
+  createdAt     DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([roomId])
+}
