@@ -1,20 +1,17 @@
 // =============================================================================
-//  BINGO 75 — Prisma Schema (Etapa 1)
-//  Motor de Sorteo Determinístico Stateless + Pagos Híbridos + Roles
+//  ALSERLA BINGO — Prisma Schema
+//  Motor Determinístico Stateless + Pagos Híbridos + Roles + Retiros
 // =============================================================================
 //
-//  PORTABILIDAD: este schema usa tipos que funcionan tanto en SQLite (dev
-//  local / sandbox) como en PostgreSQL serverless (Neon, producción):
-//    - `Json`  -> mapea a `jsonb` en Neon (ballSequence, grid, meta, raw)
-//    - columnas "enum-like" son `String` restringidas en la capa de app con
-//      uniones de TypeScript (evita migraciones de enum en serverless).
+//  ECONOMÍA: todos los montos (balance, cardPrice, premios, recargas, retiros)
+//  se almacenan en CENTAVOS de USD (Int). $5.00 = 500. El frontend formatea
+//  con formatUSD(cents) => "$5.00 USD".
 //
-//  UPGRADE A NEON PURO (opcional):
-//    1. `datasource db { provider = "postgresql" }`
-//    2. `DATABASE_URL="postgresql://user:pass@ep-xxx.neon.tech/db?sslmode=require"`
-//    3. (opcional) `ballSequence Int[]` en lugar de `Json` y enums nativos.
-//    El resto del código no cambia: el motor determinístico lee ballSequence
-//    como number[] sin importar el tipo físico de almacenamiento.
+//  PORTABILIDAD: funciona en SQLite (dev) y PostgreSQL/Neon (prod):
+//    - `Json` -> `jsonb` en Neon (ballSequence, grid, accountData, raw)
+//    - "enum-like" String restringidos en la capa de app con uniones TS.
+//
+//  UPGRADE A NEON: `provider = "postgresql"` + DATABASE_URL Neon + `prisma db push`.
 // =============================================================================
 
 generator client {
@@ -28,8 +25,7 @@ datasource db {
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  USERS & ROLES
-//  Autenticación real: email + passwordHash (bcrypt) con sesión JWT en
-//  cookie HTTP-only. role gobierna host/admin. balance = créditos enteros.
+//  balance en centavos USD. Bono de bienvenida $5.00 = 500 al registrarse.
 // ─────────────────────────────────────────────────────────────────────────────
 model User {
   id           String   @id @default(cuid())
@@ -37,7 +33,7 @@ model User {
   name         String
   passwordHash String? // null => cuenta solo magic-link (futuro)
   role         String   @default("PLAYER") // PLAYER | HOST | ADMIN
-  balance      Int      @default(0) // créditos (enteros, sin decimales)
+  balance      Int      @default(0) // centavos USD
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -49,55 +45,58 @@ model User {
   payments          PaymentTransaction[]
   transferRequests  TransferRequest[]    @relation("TransferRequestOwner")
   reviewedTransfers TransferRequest[]    @relation("TransferRequestReviewer")
+  payouts           PrizePayout[]        @relation("PayoutOwner")
+  reviewedPayouts   PrizePayout[]        @relation("PayoutReviewer")
   ledgerEntries     LedgerEntry[]
 
   @@index([role])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  ROOM — Motor Determinístico Stateless (CERO timers en RAM)
+//  ROOM — Motor Determinístico Stateless (CERO timers en RAM) + Auto-detección
 //
-//  Al iniciar (start): se genera y persiste ballSequence = permutación
-//  aleatoria completa de [1..75]. Las bolillas reveladas en cualquier
-//  instante se CALCULAN, no se guardan en memoria:
+//  revealedCount = floor((effectiveNow - startedAt - pausedElapsedMs) / (intervalSec*1000))
+//  effectiveNow = pausedAt ?? endedAt ?? serverNow
 //
-//     effectiveNow   = pausedAt ?? serverNow
-//     elapsedMs      = effectiveNow - startedAt - pausedElapsedMs
-//     revealedCount  = floor(elapsedMs / (intervalSec * 1000))
-//     drawnNumbers   = ballSequence.slice(0, revealedCount)
+//  AUTO-DETECCIÓN: cada vez que revealedCount aumenta, evaluateRoomWins()
+//  revisa todos los cartones activos. Si uno completa Línea (y es la 1ra de
+//  la sala) => pausa automática. Si completa Bingo => fin automático.
+//  lastEvalDrawIndex evita re-evaluar el mismo instante.
 //
-//  Al cantar la 1ra Línea válida => pausedAt = now() (congela el reloj).
-//  Al reanudar (resume)          => pausedElapsedMs += (now - pausedAt);
-//                                    pausedAt = null.
-//  No hay setInterval, no hay Map en memoria: sobrevive reinicios y es
-//  compatible con serverless / multi-instancia.
+//  VISIBILIDAD: isPublic=true => visible en el lobby (saldo > 0). isPublic=false
+//  => solo accesible vía enlace /invite/[inviteToken].
 // ─────────────────────────────────────────────────────────────────────────────
 model Room {
   id       String @id @default(cuid())
-  token    String @unique // código corto de invitación (compartible)
+  token    String @unique // código corto de 6 chars (compartible)
   status   String @default("WAITING") // WAITING | RUNNING | PAUSED | ENDED
   gameType String @default("75")
   hostId   String
   host     User   @relation(fields: [hostId], references: [id], onDelete: Cascade)
 
+  // ── Visibilidad / invitación ───────────────────────────────────────────
+  isPublic    Boolean @default(true) // pública (lobby) o privada (solo invite)
+  inviteToken String  @unique @default(cuid()) // enlace único /invite/[inviteToken]
+
   // ── Reloj determinístico ───────────────────────────────────────────────
   ballSequence    Json? // number[] permutación [1..75] (source of truth)
   startedAt       DateTime? // inicio del reloj de sorteo
-  pausedAt        DateTime? // != null => reloj congelado
-  pausedElapsedMs Int       @default(0) // ms pausados acumulados
-  intervalSec     Int       @default(5) // segundos entre bolillas
+  pausedAt        DateTime? // != null => reloj congelado (auto-pausa por Línea)
+  pausedElapsedMs Int      @default(0) // ms pausados acumulados
+  intervalSec     Int      @default(5) // segundos entre bolillas
+  lastEvalDrawIndex Int    @default(0) // último drawIndex evaluado por auto-detección
 
-  // ── Economía configurable por sala ─────────────────────────────────────
-  cardPrice    Int    @default(100)
-  prizeLine    Int    @default(100)
-  prizeCorners Int    @default(80)
-  prizeBingo   Int    @default(300)
-  currency     String @default("ARS")
+  // ── Economía configurable por sala (centavos USD) ───────────────────────
+  cardPrice    Int    @default(100) // mínimo $1.00 = 100
+  prizeLine    Int    @default(500) // $5.00
+  prizeCorners Int    @default(400) // $4.00
+  prizeBingo   Int    @default(2000) // $20.00
+  currency     String @default("USD")
 
   // ── Ciclo de vida ──────────────────────────────────────────────────────
   endedAt          DateTime?
   scheduledStartAt DateTime? // auto-inicio opcional (cron externo)
-  currentRound     Int       @default(1) // soporta re-compra entre rondas
+  currentRound     Int      @default(1) // soporta re-compra entre rondas
   meta             Json? // calendario, notas, config personalizada
 
   createdAt DateTime @default(now())
@@ -111,6 +110,7 @@ model Room {
 
   @@index([status])
   @@index([hostId])
+  @@index([isPublic])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -130,16 +130,15 @@ model RoomParticipant {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  PURCHASE — cabecera agregada de una transacción buyCards
-//  (quantity tickets x unitPrice = totalCost). Para auditoría + re-compra.
+//  PURCHASE — cabecera agregada de una transacción buyCards (centavos USD)
 // ─────────────────────────────────────────────────────────────────────────────
 model Purchase {
   id        String   @id @default(cuid())
   roomId    String
   userId    String
   quantity  Int
-  unitPrice Int
-  totalCost Int
+  unitPrice Int // centavos USD
+  totalCost Int // centavos USD
   round     Int      @default(1)
   createdAt DateTime @default(now())
 
@@ -154,6 +153,11 @@ model Purchase {
 // ─────────────────────────────────────────────────────────────────────────────
 //  TICKET — cartón 5x5 (B:1-15, I:16-30, N:31-45, G:46-60, O:61-75)
 //  grid = (number|null)[][] con grid[2][2] = null (centro libre).
+//
+//  MULTIGANANCIA: un cartón puede ganar Línea, Esquinas y Bingo en la misma
+//  partida. Las victorias de Línea/Esquinas se registran via Claims (valid=true)
+//  SIN cambiar el status del cartón — sigue ACTIVE y puede ganar Bingo.
+//  status solo cambia a WON_BINGO (cartón lleno, terminal) o CANCELLED.
 // ─────────────────────────────────────────────────────────────────────────────
 model Ticket {
   id         String   @id @default(cuid())
@@ -161,7 +165,7 @@ model Ticket {
   userId     String
   purchaseId String?
   grid       Json // (number|null)[][] 5x5
-  status     String   @default("ACTIVE") // ACTIVE|WON_LINE|WON_CORNERS|WON_BINGO|CANCELLED
+  status     String   @default("ACTIVE") // ACTIVE | WON_BINGO | CANCELLED
   createdAt  DateTime @default(now())
 
   room     Room      @relation(fields: [roomId], references: [id], onDelete: Cascade)
@@ -176,8 +180,6 @@ model Ticket {
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  DRAW — historial/auditoría append-only de bolillas reveladas.
-//  El estado canónico se CALCULA desde ballSequence; esta tabla lo persiste
-//  para replay/auditoría. Restricciones únicas evitan duplicados.
 // ─────────────────────────────────────────────────────────────────────────────
 model Draw {
   id         String   @id @default(cuid())
@@ -194,9 +196,10 @@ model Draw {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  CLAIM — reclamo de premio (LINE | CORNERS | BINGO)
-//  drawIndex = revealedCount al momento del claim (co-ganadores comparten
-//  drawIndex => premio dividido). prizeAwarded audita cuánto se acreditó.
+//  CLAIM — victoria de premio (LINE | CORNERS | BINGO), auto o manual.
+//  Un mismo ticket puede tener varios Claims válidos (Línea + Esquinas + Bingo).
+//  drawIndex = revealedCount al ganar (co-ganadores comparten drawIndex).
+//  prizeAwarded audita cuánto se acreditó (centavos USD).
 // ─────────────────────────────────────────────────────────────────────────────
 model Claim {
   id           String   @id @default(cuid())
@@ -206,30 +209,29 @@ model Claim {
   type         String // LINE | CORNERS | BINGO
   valid        Boolean  @default(false)
   drawIndex    Int // revealedCount en el instante del claim
-  prizeAwarded Int      @default(0) // créditos acreditados (0 si inválido)
+  prizeAwarded Int      @default(0) // centavos USD acreditados (0 si inválido)
   reason       String?
   createdAt    DateTime @default(now())
 
-  room   Room    @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  ticket Ticket? @relation(fields: [ticketId], references: [id], onDelete: SetNull)
+  room   Room         @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user   User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ticket Ticket?      @relation(fields: [ticketId], references: [id], onDelete: SetNull)
+  payout PrizePayout? // retiro asociado a este premio (opcional)
 
   @@index([roomId, type, valid])
   @@index([userId])
+  @@index([ticketId, type])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  PAYMENT TRANSACTION — ledger idempotente de recargas.
-//  MercadoPago: externalId = payment id; webhook crea/actualiza aquí.
-//  Transferencia manual: se aprueba desde admin => se crea un row APPROVED.
-//  @@unique([provider, externalId]) garantiza idempotencia (no doble crédito).
+//  PAYMENT TRANSACTION — ledger idempotente de recargas (centavos USD).
 // ─────────────────────────────────────────────────────────────────────────────
 model PaymentTransaction {
   id          String    @id @default(cuid())
   userId      String
   provider    String // MERCADOPAGO | MANUAL_TRANSFER
-  externalId  String? // MP payment id | número de referencia de transferencia
-  amount      Int // créditos a acreditar
+  externalId  String? // MP payment id | referencia de transferencia
+  amount      Int // centavos USD
   status      String    @default("PENDING") // PENDING|APPROVED|REJECTED|FAILED
   raw         Json? // payload del webhook / metadata
   createdAt   DateTime  @default(now())
@@ -243,14 +245,12 @@ model PaymentTransaction {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  TRANSFER REQUEST — recarga internacional manual pendiente de aprobación.
-//  El usuario registra monto, método/país, referencia y nota/comprobante.
-//  Admin APPROVED => crea PaymentTransaction(APPROVED) + LedgerEntry + crédito.
+//  TRANSFER REQUEST — recarga internacional manual pendiente (centavos USD)
 // ─────────────────────────────────────────────────────────────────────────────
 model TransferRequest {
   id              String    @id @default(cuid())
   userId          String
-  amount          Int // créditos solicitados
+  amount          Int // centavos USD solicitados
   paymentMethod   String // "Bank Transfer"|"Wise"|"PIX"|"Zelle"|...
   country         String?
   referenceNumber String
@@ -270,18 +270,47 @@ model TransferRequest {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  LEDGER ENTRY — auditoría append-only de TODA mutación de balance.
-//  Resuelve el bug crítico del repo original (premios nunca acreditados):
-//  cada débito/crédito queda rastreable. amount con signo, balanceAfter snapshot.
+//  PRIZE PAYOUT — solicitud de cobro de premio (retiro de ganancias).
+//  Se crea automáticamente al ganar (modal de cobro) o a pedido del jugador.
+//  El admin marca PAID con comprobante/ID de transacción.
+//  amount en centavos USD. accountData (Json) guarda los datos según método.
+// ─────────────────────────────────────────────────────────────────────────────
+model PrizePayout {
+  id          String    @id @default(cuid())
+  userId      String
+  roomId      String?
+  claimId     String? @unique // victoria que lo originó (opcional, 1:1)
+  amount      Int // centavos USD a retirar
+  status      String    @default("PENDING") // PENDING | PAID
+  country     String // "AR" | "INTERNACIONAL"
+  method      String // ALIAS|CBU|USDT|BINANCE|PAYPAL|ZELLE
+  accountData Json // {titular, alias, banco} | {wallet, network, email} ...
+  notes       String?
+  adminNote   String? // comprobante / ID de transcripción adjunto por admin
+  paidById    String?
+  paidAt      DateTime?
+  createdAt   DateTime  @default(now())
+
+  user    User   @relation("PayoutOwner", fields: [userId], references: [id], onDelete: Cascade)
+  paidBy  User?  @relation("PayoutReviewer", fields: [paidById], references: [id], onDelete: SetNull)
+  claim   Claim? @relation(fields: [claimId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([userId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  LEDGER ENTRY — auditoría append-only de TODA mutación de balance (centavos).
+//  amount con signo: negativo débito, positivo crédito. balanceAfter snapshot.
 // ─────────────────────────────────────────────────────────────────────────────
 model LedgerEntry {
   id            String   @id @default(cuid())
   userId        String
-  type          String // PURCHASE|PRIZE|RECHARGE|REFUND|ADMIN_ADJUST
-  amount        Int // signado: negativo débito, positivo crédito
+  type          String // PURCHASE|PRIZE|RECHARGE|PAYOUT|REFUND|ADMIN_ADJUST
+  amount        Int // signado, centavos USD
   balanceAfter  Int // snapshot post-movimiento
   roomId        String?
-  referenceType String? // "Purchase"|"Claim"|"PaymentTransaction"|"TransferRequest"
+  referenceType String? // "Purchase"|"Claim"|"PaymentTransaction"|"PrizePayout"
   referenceId   String?
   description   String?
   createdAt     DateTime @default(now())

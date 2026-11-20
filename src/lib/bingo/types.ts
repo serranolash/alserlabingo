@@ -37,12 +37,21 @@ export type UserRole = "PLAYER" | "HOST" | "ADMIN";
 export type PaymentProvider = "MERCADOPAGO" | "MANUAL_TRANSFER";
 export type PaymentStatus = "PENDING" | "APPROVED" | "REJECTED" | "FAILED";
 export type TransferStatus = "PENDING" | "APPROVED" | "REJECTED";
+export type PayoutStatus = "PENDING" | "PAID";
+export type PayoutMethod =
+  | "ALIAS"
+  | "CBU"
+  | "USDT"
+  | "BINANCE"
+  | "PAYPAL"
+  | "ZELLE";
 
 // ── Ledger (auditoría de balance) ──────────────────────────────────────────
 export type LedgerType =
   | "PURCHASE"
   | "PRIZE"
   | "RECHARGE"
+  | "PAYOUT"
   | "REFUND"
   | "ADMIN_ADJUST";
 
@@ -92,6 +101,10 @@ export interface PublicRoomState {
   }>;
   /** Conteo de participantes a 1 bolilla de ganar (termómetro de tensión). */
   nearMissCount: number;
+  /** Visibilidad de la sala (false = privada, solo vía inviteToken). */
+  isPublic: boolean;
+  /** Token único para el enlace de invitación /invite/[inviteToken]. */
+  inviteToken: string;
   claims: Array<{
     id: string;
     userId: string;

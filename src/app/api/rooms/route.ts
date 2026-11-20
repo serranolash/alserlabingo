@@ -15,6 +15,7 @@ export const POST = withErrors(async (request: Request) => {
     prizeBingo?: number;
     intervalSec?: number;
     currency?: string;
+    isPublic?: boolean;
   }>(request);
 
   const { room, token } = await createRoom(user.id, {
@@ -24,6 +25,7 @@ export const POST = withErrors(async (request: Request) => {
     prizeBingo: body.prizeBingo,
     intervalSec: body.intervalSec,
     currency: body.currency,
+    isPublic: body.isPublic,
   });
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
@@ -31,7 +33,8 @@ export const POST = withErrors(async (request: Request) => {
     {
       roomId: room.id,
       token,
-      inviteUrl: appUrl ? `${appUrl.replace(/\/+$/, "")}/?room=${token}` : `/?room=${token}`,
+      inviteToken: room.inviteToken,
+      inviteUrl: `${appUrl ? appUrl.replace(/\/+$/, "") : ""}/invite/${room.inviteToken}`,
       hostUserId: user.id,
     },
     201,

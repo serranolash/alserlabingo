@@ -1,7 +1,8 @@
 "use client";
-// Barra superior: logo, saldo del usuario y logout.
+// Barra superior: logo, saldo del usuario (USD) y logout.
 import { LogOut, Wallet } from "lucide-react";
 import { apiFetch, useApp } from "@/lib/store";
+import { formatUSDShort } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 
 export function Header() {
@@ -33,8 +34,8 @@ export function Header() {
             className="flex items-center gap-1.5 rounded-full bg-secondary/60 px-3 py-1.5 text-sm font-bold hover:bg-secondary"
           >
             <Wallet className="h-4 w-4 text-gold" />
-            <span>{user.balance}</span>
-            <span className="text-muted-foreground">cr.</span>
+            <span>{formatUSDShort(user.balance)}</span>
+            <span className="text-muted-foreground">USD</span>
           </button>
           <Button
             variant="ghost"

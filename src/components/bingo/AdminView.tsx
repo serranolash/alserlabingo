@@ -2,6 +2,7 @@
 // Panel de administración: métricas, transferencias pendientes y salas.
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch, useApp } from "@/lib/store";
+import { formatUSDShort } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -30,6 +31,18 @@ interface TransferRow {
   user: { id: string; name: string; email: string };
 }
 
+interface PayoutRow {
+  id: string;
+  amount: number;
+  country: string;
+  method: string;
+  accountData: unknown;
+  notes: string | null;
+  status: string;
+  createdAt: string;
+  user: { id: string; name: string; email: string };
+}
+
 interface AdminRoom {
   id: string;
   token: string;
@@ -48,17 +61,20 @@ export function AdminView() {
   const { user } = useApp();
   const [metrics, setMetrics] = useState<Metrics | null>(null);
   const [transfers, setTransfers] = useState<TransferRow[]>([]);
+  const [payouts, setPayouts] = useState<PayoutRow[]>([]);
   const [rooms, setRooms] = useState<AdminRoom[]>([]);
 
   const loadAll = useCallback(async () => {
     try {
-      const [m, t, r] = await Promise.all([
+      const [m, t, p, r] = await Promise.all([
         apiFetch<Metrics>("/api/admin/metrics"),
         apiFetch<{ transfers: TransferRow[] }>("/api/admin/transfers?status=PENDING"),
+        apiFetch<{ payouts: PayoutRow[] }>("/api/admin/payouts?status=PENDING"),
         apiFetch<{ rooms: AdminRoom[] }>("/api/admin/rooms"),
       ]);
       setMetrics(m);
       setTransfers(t.transfers);
+      setPayouts(p.payouts);
       setRooms(r.rooms);
     } catch {
       /* ignore */
@@ -99,6 +115,21 @@ export function AdminView() {
     }
   };
 
+  const payPayout = async (id: string) => {
+    const note = window.prompt("Ingresa el comprobante / ID de transacción del pago:");
+    if (!note?.trim()) return;
+    try {
+      await apiFetch(`/api/admin/payouts/${id}/pay`, {
+        method: "POST",
+        body: JSON.stringify({ adminNote: note.trim() }),
+      });
+      toast.success("Retiro marcado como pagado");
+      loadAll();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Error");
+    }
+  };
+
   return (
     <div className="mx-auto max-w-3xl space-y-4 px-4 py-5">
       <h1 className="flex items-center gap-2 text-xl font-black">
@@ -107,9 +138,10 @@ export function AdminView() {
       </h1>
 
       <Tabs defaultValue="metrics">
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="metrics">Métricas</TabsTrigger>
-          <TabsTrigger value="transfers">Transferencias{transfers.length > 0 ? ` (${transfers.length})` : ""}</TabsTrigger>
+          <TabsTrigger value="transfers">Recargas{transfers.length > 0 ? ` (${transfers.length})` : ""}</TabsTrigger>
+          <TabsTrigger value="payouts">Retiros{payouts.length > 0 ? ` (${payouts.length})` : ""}</TabsTrigger>
           <TabsTrigger value="rooms">Salas</TabsTrigger>
         </TabsList>
 
@@ -118,14 +150,14 @@ export function AdminView() {
           {metrics ? (
             <>
               <div className="grid grid-cols-3 gap-2">
-                <Stat label="Usuarios" value={metrics.users.total} sub={`${metrics.users.players} jugadores`} />
-                <Stat label="Salas" value={metrics.rooms.total} sub={`${metrics.rooms.running} activas`} />
-                <Stat label="Créditos" value={metrics.economy.creditsInCirculation} sub="en circulación" />
+                <Stat label="Usuarios" value={String(metrics.users.total)} sub={`${metrics.users.players} jugadores`} />
+                <Stat label="Salas" value={String(metrics.rooms.total)} sub={`${metrics.rooms.running} activas`} />
+                <Stat label="Saldo" value={formatUSDShort(metrics.economy.creditsInCirculation)} sub="en circulación" />
               </div>
               <div className="grid grid-cols-3 gap-2">
-                <Stat label="Recaudación" value={metrics.economy.totalRecharges} sub="total recargas" />
-                <Stat label="Pendientes" value={metrics.economy.pendingTransfers} sub="transferencias" />
-                <Stat label="Finalizadas" value={metrics.rooms.ended} sub="salas" />
+                <Stat label="Recaudación" value={formatUSDShort(metrics.economy.totalRecharges)} sub="total recargas" />
+                <Stat label="Pendientes" value={String(metrics.economy.pendingTransfers)} sub="transferencias" />
+                <Stat label="Finalizadas" value={String(metrics.rooms.ended)} sub="salas" />
               </div>
               <Card className="border-border/60 bg-card/80">
                 <CardHeader className="pb-2"><CardTitle className="text-sm">Últimos premios cantados</CardTitle></CardHeader>
@@ -137,7 +169,7 @@ export function AdminView() {
                       {metrics.recentWins.map((w) => (
                         <div key={w.id} className="flex items-center justify-between text-sm">
                           <span>{w.userName} · <Badge variant="secondary" className="text-[0.6rem]">{w.type}</Badge> · {w.roomToken}</span>
-                          <span className="font-bold text-gold">+{w.prizeAwarded}</span>
+                          <span className="font-bold text-gold">+{formatUSDShort(w.prizeAwarded)}</span>
                         </div>
                       ))}
                     </div>
@@ -150,10 +182,10 @@ export function AdminView() {
           )}
         </TabsContent>
 
-        {/* Transferencias */}
+        {/* Transferencias (recargas manuales) */}
         <TabsContent value="transfers" className="space-y-2">
           {transfers.length === 0 ? (
-            <Card className="border-dashed border-border/40"><CardContent className="py-8 text-center text-sm text-muted-foreground">Sin transferencias pendientes</CardContent></Card>
+            <Card className="border-dashed border-border/40"><CardContent className="py-8 text-center text-sm text-muted-foreground">Sin recargas pendientes</CardContent></Card>
           ) : (
             transfers.map((t) => (
               <Card key={t.id} className="border-border/60 bg-card/80">
@@ -161,7 +193,7 @@ export function AdminView() {
                   <div className="flex items-start justify-between">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className="font-bold text-gold">+{t.amount} cr.</span>
+                        <span className="font-bold text-gold">+{formatUSDShort(t.amount)}</span>
                         <Badge variant="outline" className="text-[0.6rem]">{t.paymentMethod}</Badge>
                         {t.country && <span className="text-xs text-muted-foreground">{t.country}</span>}
                       </div>
@@ -184,6 +216,37 @@ export function AdminView() {
           )}
         </TabsContent>
 
+        {/* Retiros (pagos a ganadores) */}
+        <TabsContent value="payouts" className="space-y-2">
+          {payouts.length === 0 ? (
+            <Card className="border-dashed border-border/40"><CardContent className="py-8 text-center text-sm text-muted-foreground">Sin retiros pendientes</CardContent></Card>
+          ) : (
+            payouts.map((p) => (
+              <Card key={p.id} className="border-border/60 bg-card/80">
+                <CardContent className="p-3">
+                  <div className="flex items-start justify-between">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-gold">{formatUSDShort(p.amount)}</span>
+                        <Badge variant="outline" className="text-[0.6rem]">{p.country === "AR" ? "Argentina" : "Internacional"}</Badge>
+                        <Badge variant="secondary" className="text-[0.6rem]">{p.method}</Badge>
+                      </div>
+                      <div className="mt-1 text-sm">{p.user.name} <span className="text-muted-foreground">({p.user.email})</span></div>
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        {JSON.stringify(p.accountData)}
+                      </div>
+                      {p.notes && <div className="text-xs text-muted-foreground">Notas: {p.notes}</div>}
+                    </div>
+                    <Button size="sm" onClick={() => payPayout(p.id)} className="gap-1 h-8">
+                      <Check className="h-3.5 w-3.5" /> Marcar pagado
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))
+          )}
+        </TabsContent>
+
         {/* Salas */}
         <TabsContent value="rooms" className="space-y-2">
           {rooms.length === 0 ? (
@@ -197,7 +260,7 @@ export function AdminView() {
   );
 }
 
-function Stat({ label, value, sub }: { label: string; value: number; sub: string }) {
+function Stat({ label, value, sub }: { label: string; value: string; sub: string }) {
   return (
     <Card className="border-border/60 bg-card/80">
       <CardContent className="p-3">
@@ -210,10 +273,10 @@ function Stat({ label, value, sub }: { label: string; value: number; sub: string
 }
 
 function AdminRoomRow({ room, onSaved }: { room: AdminRoom; onSaved: () => void }) {
-  const [cardPrice, setCardPrice] = useState(room.cardPrice);
-  const [prizeLine, setPrizeLine] = useState(room.prizeLine);
-  const [prizeCorners, setPrizeCorners] = useState(room.prizeCorners);
-  const [prizeBingo, setPrizeBingo] = useState(room.prizeBingo);
+  const [cardPrice, setCardPrice] = useState(room.cardPrice / 100);
+  const [prizeLine, setPrizeLine] = useState(room.prizeLine / 100);
+  const [prizeCorners, setPrizeCorners] = useState(room.prizeCorners / 100);
+  const [prizeBingo, setPrizeBingo] = useState(room.prizeBingo / 100);
   const [saving, setSaving] = useState(false);
 
   const save = async () => {
@@ -221,7 +284,12 @@ function AdminRoomRow({ room, onSaved }: { room: AdminRoom; onSaved: () => void 
     try {
       await apiFetch(`/api/admin/rooms/${room.id}`, {
         method: "PATCH",
-        body: JSON.stringify({ cardPrice, prizeLine, prizeCorners, prizeBingo }),
+        body: JSON.stringify({
+          cardPrice: Math.round(cardPrice * 100),
+          prizeLine: Math.round(prizeLine * 100),
+          prizeCorners: Math.round(prizeCorners * 100),
+          prizeBingo: Math.round(prizeBingo * 100),
+        }),
       });
       toast.success(`Sala ${room.token} actualizada`);
       onSaved();
@@ -247,10 +315,10 @@ function AdminRoomRow({ room, onSaved }: { room: AdminRoom; onSaved: () => void 
         </div>
         <div className="text-xs text-muted-foreground">Anfitrión: {room.hostName}</div>
         <div className="mt-2 grid grid-cols-4 gap-1.5">
-          <div><Label className="text-[0.6rem]">Cartón</Label><Input type="number" value={cardPrice} onChange={(e) => setCardPrice(Number(e.target.value))} className="h-8 text-sm" /></div>
-          <div><Label className="text-[0.6rem]">Línea</Label><Input type="number" value={prizeLine} onChange={(e) => setPrizeLine(Number(e.target.value))} className="h-8 text-sm" /></div>
-          <div><Label className="text-[0.6rem]">Esquinas</Label><Input type="number" value={prizeCorners} onChange={(e) => setPrizeCorners(Number(e.target.value))} className="h-8 text-sm" /></div>
-          <div><Label className="text-[0.6rem]">Bingo</Label><Input type="number" value={prizeBingo} onChange={(e) => setPrizeBingo(Number(e.target.value))} className="h-8 text-sm" /></div>
+          <div><Label className="text-[0.6rem]">Cartón $</Label><Input type="number" step={0.5} value={cardPrice} onChange={(e) => setCardPrice(Number(e.target.value))} className="h-8 text-sm" /></div>
+          <div><Label className="text-[0.6rem]">Línea $</Label><Input type="number" step={0.5} value={prizeLine} onChange={(e) => setPrizeLine(Number(e.target.value))} className="h-8 text-sm" /></div>
+          <div><Label className="text-[0.6rem]">Esquinas $</Label><Input type="number" step={0.5} value={prizeCorners} onChange={(e) => setPrizeCorners(Number(e.target.value))} className="h-8 text-sm" /></div>
+          <div><Label className="text-[0.6rem]">Bingo $</Label><Input type="number" step={1} value={prizeBingo} onChange={(e) => setPrizeBingo(Number(e.target.value))} className="h-8 text-sm" /></div>
         </div>
         <Button size="sm" onClick={save} disabled={saving} className="mt-2">Guardar</Button>
       </CardContent>

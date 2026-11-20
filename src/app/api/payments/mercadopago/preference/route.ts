@@ -13,10 +13,10 @@ export const POST = withErrors(async (request: Request) => {
     );
   }
   const body = await readBody<{ amount?: number }>(request);
-  const amount = Math.round(Number(body.amount ?? 0));
-  if (!Number.isInteger(amount) || amount < 1) {
-    return json({ error: "Monto inválido (debe ser entero positivo)" }, 400);
+  const amountCents = Math.round(Number(body.amount ?? 0));
+  if (!Number.isInteger(amountCents) || amountCents < 100) {
+    return json({ error: "Monto inválido (mínimo $1.00 USD = 100 centavos)" }, 400);
   }
-  const pref = await createPreference(user.id, amount);
-  return json({ ...pref, amount });
+  const pref = await createPreference(user.id, amountCents);
+  return json({ ...pref, amountCents });
 });

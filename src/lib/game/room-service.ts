@@ -1,17 +1,18 @@
 // =============================================================================
 //  ROOM SERVICE — Lógica de negocio transaccional de Alserla Bingo
 //
-//  Corrige TODOS los bugs críticos del repo NestJS original:
-//   - userId se extrae de la SESIÓN (auth), nunca del body.
-//   - buyCards/claim envueltos en prisma.$transaction con bloqueo de fila
-//     (room + user) => cero race conditions, cero doble gasto.
-//   - Premios SÍ se acreditan (via adjustBalance + LedgerEntry).
-//   - Co-ganadores: mismo drawIndex => premio dividido con ajuste retroactivo
-//     para que el total acreditado === floor(prizeTotal / N) * N <= prizeTotal.
-//   - Pausa por 1ra Línea => pausedAt (reloj determinístico congelado).
-//   - Bingo => endedAt (fin definitivo).
+//  Mejoras críticas:
+//   - AUTO-DETECCIÓN de premios: evaluateRoomWins() revisa todos los cartones
+//     cada vez que se revela una bolilla. Pausa auto en 1ra Línea, fin auto en
+//     Bingo. No depende del botón del jugador.
+//   - MULTIGANANCIA: un cartón puede ganar Línea + Esquinas + Bingo. Las
+//     victorias de Línea/Esquinas NO cambian el status del cartón (sigue
+//     ACTIVE). Solo Bingo (cartón lleno) lo terminaliza (WON_BINGO).
+//   - Co-ganadores: mismo drawIndex => premio dividido con ajuste retroactivo.
+//   - Visibilidad: salas públicas (lobby) vs privadas (solo vía inviteToken).
+//   - Economía USD (centavos): mínimo $1.00 por cartón.
 // =============================================================================
-import type { PrismaClient, Room, Ticket, User } from "@prisma/client";
+import type { PrismaClient, Room, Ticket } from "@prisma/client";
 import { db } from "@/lib/db";
 import {
   type ClaimType,
@@ -19,7 +20,13 @@ import {
   type RoomStatus,
 } from "@/lib/bingo/types";
 import { generateBallSequence, generateBingo75Card, normalizeGrid } from "@/lib/bingo/engine";
-import { computeCardProgress, validatePattern } from "@/lib/bingo/patterns";
+import {
+  computeCardProgress,
+  hasBingo,
+  hasFourCorners,
+  hasLine,
+} from "@/lib/bingo/patterns";
+import { MIN_CARD_PRICE_CENTS } from "@/lib/format";
 import { adjustBalance } from "./ledger";
 import {
   computeRevealedCount,
@@ -61,7 +68,7 @@ async function generateRoomToken(): Promise<string> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  CREATE ROOM — el host autenticado crea una sala y se une como participante
+//  CREATE ROOM — solo ADMIN. isPublic + premios configurables (mín $1.00 cartón)
 // ─────────────────────────────────────────────────────────────────────────────
 export async function createRoom(
   hostUserId: string,
@@ -72,8 +79,14 @@ export async function createRoom(
     prizeBingo?: number;
     intervalSec?: number;
     currency?: string;
+    isPublic?: boolean;
   },
 ): Promise<{ room: Room; token: string }> {
+  const cardPrice = opts?.cardPrice ?? Number(process.env.CARD_PRICE ?? 100);
+  if (!Number.isInteger(cardPrice) || cardPrice < MIN_CARD_PRICE_CENTS) {
+    throw badRequest(`El precio por cartón mínimo es $1.00 USD (${MIN_CARD_PRICE_CENTS} centavos)`);
+  }
+
   const token = await generateRoomToken();
   const room = await db.room.create({
     data: {
@@ -81,15 +94,15 @@ export async function createRoom(
       status: "WAITING",
       gameType: "75",
       hostId: hostUserId,
-      cardPrice: opts?.cardPrice ?? Number(process.env.CARD_PRICE ?? 100),
-      prizeLine: opts?.prizeLine ?? Number(process.env.PRIZE_LINE ?? 100),
-      prizeCorners: opts?.prizeCorners ?? Number(process.env.PRIZE_CORNERS ?? 80),
-      prizeBingo: opts?.prizeBingo ?? Number(process.env.PRIZE_BINGO ?? 300),
+      isPublic: opts?.isPublic ?? true,
+      cardPrice,
+      prizeLine: opts?.prizeLine ?? Number(process.env.PRIZE_LINE ?? 500),
+      prizeCorners: opts?.prizeCorners ?? Number(process.env.PRIZE_CORNERS ?? 400),
+      prizeBingo: opts?.prizeBingo ?? Number(process.env.PRIZE_BINGO ?? 2000),
       intervalSec: opts?.intervalSec ?? Number(process.env.DRAW_INTERVAL_SEC ?? 5),
-      currency: opts?.currency ?? process.env.DEFAULT_CURRENCY ?? "ARS",
+      currency: "USD",
     },
   });
-  // Host se une como participante
   await db.roomParticipant.create({
     data: { roomId: room.id, userId: hostUserId },
   });
@@ -97,15 +110,11 @@ export async function createRoom(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  JOIN ROOM — jugador autenticado se une por token (idempotente)
+//  JOIN ROOM — por código corto (públicas) o por inviteToken (privadas)
 // ─────────────────────────────────────────────────────────────────────────────
-export async function joinRoom(
-  userId: string,
-  token: string,
-): Promise<Room> {
+export async function joinRoom(userId: string, token: string): Promise<Room> {
   const room = await db.room.findUnique({ where: { token: token.toUpperCase() } });
   if (!room) throw notFound("Sala no encontrada");
-  // Idempotente: si ya es participante, no duplica (unique constraint)
   await db.roomParticipant
     .create({ data: { roomId: room.id, userId } })
     .catch(() => {
@@ -114,8 +123,23 @@ export async function joinRoom(
   return room;
 }
 
+export async function joinRoomByInviteToken(userId: string, inviteToken: string): Promise<Room> {
+  const room = await db.room.findUnique({ where: { inviteToken } });
+  if (!room) throw notFound("Enlace de invitación inválido");
+  await db.roomParticipant
+    .create({ data: { roomId: room.id, userId } })
+    .catch(() => {
+      /* ya existe -> ok */
+    });
+  return room;
+}
+
+export async function getRoomByInviteToken(inviteToken: string): Promise<Room | null> {
+  return db.room.findUnique({ where: { inviteToken } });
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
-//  START ROOM — genera ballSequence + startedAt (motor determinístico ON)
+//  START / RESUME / RESET / SCHEDULE — controles del host (admin)
 // ─────────────────────────────────────────────────────────────────────────────
 export async function startRoom(hostUserId: string, roomId: string): Promise<Room> {
   const room = await db.room.findUnique({ where: { id: roomId } });
@@ -133,19 +157,17 @@ export async function startRoom(hostUserId: string, roomId: string): Promise<Roo
       pausedAt: null,
       pausedElapsedMs: 0,
       endedAt: null,
+      lastEvalDrawIndex: 0,
     },
   });
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  RESUME ROOM — descongela el reloj tras una pausa por Línea
-// ─────────────────────────────────────────────────────────────────────────────
 export async function resumeRoom(hostUserId: string, roomId: string): Promise<Room> {
   const room = await db.room.findUnique({ where: { id: roomId } });
   if (!room) throw notFound("Sala no encontrada");
   if (room.hostId !== hostUserId) throw forbidden("Solo el anfitrión puede reanudar");
   if (room.status === "ENDED") throw badRequest("La partida ya terminó");
-  if (!room.pausedAt) return room; // ya está corriendo
+  if (!room.pausedAt) return room;
 
   const now = getServerTime();
   const addedPause = now - room.pausedAt.getTime();
@@ -159,15 +181,13 @@ export async function resumeRoom(hostUserId: string, roomId: string): Promise<Ro
   });
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  RESET ROOM — limpia para una nueva ronda (preserva participantes)
-// ─────────────────────────────────────────────────────────────────────────────
 export async function resetRoom(hostUserId: string, roomId: string): Promise<Room> {
   const room = await db.room.findUnique({ where: { id: roomId } });
   if (!room) throw notFound("Sala no encontrada");
   if (room.hostId !== hostUserId) throw forbidden("Solo el anfitrión puede reiniciar");
 
   await db.$transaction([
+    db.prizePayout.deleteMany({ where: { roomId } }),
     db.claim.deleteMany({ where: { roomId } }),
     db.draw.deleteMany({ where: { roomId } }),
     db.ticket.deleteMany({ where: { roomId } }),
@@ -182,9 +202,26 @@ export async function resetRoom(hostUserId: string, roomId: string): Promise<Roo
       pausedAt: null,
       pausedElapsedMs: 0,
       endedAt: null,
+      lastEvalDrawIndex: 0,
       currentRound: room.currentRound + 1,
     },
   });
+}
+
+export async function scheduleRoom(hostUserId: string, roomId: string, startAtISO: string): Promise<Room> {
+  const room = await db.room.findUnique({ where: { id: roomId } });
+  if (!room) throw notFound("Sala no encontrada");
+  if (room.hostId !== hostUserId) throw forbidden("Solo el anfitrión puede programar");
+  const when = new Date(startAtISO);
+  if (Number.isNaN(when.getTime())) throw badRequest("Fecha/hora inválida");
+  return db.room.update({ where: { id: roomId }, data: { scheduledStartAt: when } });
+}
+
+export async function cancelSchedule(hostUserId: string, roomId: string): Promise<Room> {
+  const room = await db.room.findUnique({ where: { id: roomId } });
+  if (!room) throw notFound("Sala no encontrada");
+  if (room.hostId !== hostUserId) throw forbidden("Solo el anfitrión puede cancelar");
+  return db.room.update({ where: { id: roomId }, data: { scheduledStartAt: null } });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -199,15 +236,8 @@ export async function buyCards(
     throw badRequest("La cantidad debe ser entre 1 y 50");
   }
   return db.$transaction(async (tx) => {
-    // Bloqueo de fila: serializa transacciones que tocan esta sala y este user.
-    await tx.room.update({
-      where: { id: roomId },
-      data: { updatedAt: new Date() },
-    });
-    await tx.user.update({
-      where: { id: userId },
-      data: { updatedAt: new Date() },
-    });
+    await tx.room.update({ where: { id: roomId }, data: { updatedAt: new Date() } });
+    await tx.user.update({ where: { id: userId }, data: { updatedAt: new Date() } });
 
     const room = await tx.room.findUnique({ where: { id: roomId } });
     if (!room) throw notFound("Sala no encontrada");
@@ -221,38 +251,24 @@ export async function buyCards(
     const total = unitPrice * quantity;
     if (user.balance < total) throw badRequest("Fondos insuficientes");
 
-    // Débito atómico + ledger
     const newBalance = await adjustBalance(tx, {
       userId,
       amount: -total,
       type: "PURCHASE",
       roomId,
       referenceType: "Purchase",
-      description: `Compra de ${quantity} cartón(es) x ${unitPrice}`,
+      description: `Compra de ${quantity} cartón(es)`,
     });
 
     const purchase = await tx.purchase.create({
-      data: {
-        roomId,
-        userId,
-        quantity,
-        unitPrice,
-        totalCost: total,
-        round: room.currentRound,
-      },
+      data: { roomId, userId, quantity, unitPrice, totalCost: total, round: room.currentRound },
     });
 
     const tickets: Ticket[] = [];
     for (let i = 0; i < quantity; i++) {
       const grid = generateBingo75Card();
       const ticket = await tx.ticket.create({
-        data: {
-          roomId,
-          userId,
-          purchaseId: purchase.id,
-          grid,
-          status: "ACTIVE",
-        },
+        data: { roomId, userId, purchaseId: purchase.id, grid, status: "ACTIVE" },
       });
       tickets.push(ticket);
     }
@@ -261,7 +277,171 @@ export async function buyCards(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  CLAIM — validación + acreditación + división entre co-ganadores
+//  CREDIT WIN — núcleo compartido por auto-detección y claim manual.
+//  Registra una victoria VÁLIDA si el ticket no la tenía y no es tardía.
+//  Multiganancia: Línea/Esquinas NO cambian status; Bingo => WON_BINGO.
+// ─────────────────────────────────────────────────────────────────────────────
+interface CreditWinResult {
+  registered: boolean;
+  reason?: string;
+  claimId?: string;
+  prizeAwarded?: number;
+  winnersCount?: number;
+  firstInRoom?: boolean;
+}
+
+async function creditWin(
+  tx: Tx,
+  room: Room,
+  ticket: Ticket,
+  type: ClaimType,
+  drawIndex: number,
+  drawnSet: Set<number>,
+): Promise<CreditWinResult> {
+  // ¿Este ticket ya ganó este tipo? (multiganancia: cada tipo independiente)
+  const existingForTicket = await tx.claim.findFirst({
+    where: { ticketId: ticket.id, type, valid: true },
+  });
+  if (existingForTicket) return { registered: false, reason: "already_won" };
+
+  // ¿Ya hay un ganador de este tipo en la sala? (firstIdx)
+  const existing = await tx.claim.findMany({
+    where: { roomId: room.id, type, valid: true },
+    orderBy: { drawIndex: "asc" },
+  });
+  const firstIdx = existing.length ? existing[0].drawIndex : null;
+
+  // Reclamo tardío: el premio ya se ganó en un drawIndex anterior.
+  if (firstIdx !== null && drawIndex > firstIdx) {
+    return { registered: false, reason: "late" };
+  }
+
+  // Crear claim válido
+  const claimRow = await tx.claim.create({
+    data: {
+      roomId: room.id,
+      userId: ticket.userId,
+      ticketId: ticket.id,
+      type,
+      valid: true,
+      drawIndex,
+      prizeAwarded: 0,
+    },
+  });
+
+  // Bingo => terminaliza el cartón
+  if (type === "BINGO") {
+    await tx.ticket.update({ where: { id: ticket.id }, data: { status: "WON_BINGO" } });
+  }
+
+  // Cohorte de co-ganadores (mismo tipo, mismo drawIndex ganador)
+  const winIdx = firstIdx ?? drawIndex;
+  const cohort = await tx.claim.findMany({
+    where: { roomId: room.id, type, valid: true, drawIndex: winIdx },
+  });
+  const n = Math.max(1, cohort.length);
+  const prizeTotal =
+    type === "LINE" ? room.prizeLine : type === "CORNERS" ? room.prizeCorners : room.prizeBingo;
+  const perHead = Math.floor(prizeTotal / n);
+
+  // Acreditar/ajustar a cada co-ganador (delta respecto a lo ya acreditado)
+  let idx = 0;
+  for (const cw of cohort) {
+    const delta = perHead - cw.prizeAwarded;
+    if (delta !== 0) {
+      await adjustBalance(tx, {
+        userId: cw.userId,
+        amount: delta,
+        type: "PRIZE",
+        roomId: room.id,
+        referenceType: "Claim",
+        referenceId: cw.id,
+        description: `Premio ${type} (${idx + 1} de ${n})`,
+      });
+      await tx.claim.update({ where: { id: cw.id }, data: { prizeAwarded: perHead } });
+    }
+    idx++;
+  }
+
+  return {
+    registered: true,
+    claimId: claimRow.id,
+    prizeAwarded: perHead,
+    winnersCount: n,
+    firstInRoom: firstIdx === null,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  EVALUATE ROOM WINS — auto-detección de premios al revelar bolillas.
+//  Pausa auto en 1ra Línea, fin auto en Bingo. Idempotente (lastEvalDrawIndex).
+// ─────────────────────────────────────────────────────────────────────────────
+export async function evaluateRoomWins(roomId: string): Promise<void> {
+  await db.$transaction(async (tx) => {
+    await tx.room.update({ where: { id: roomId }, data: { updatedAt: new Date() } });
+    const room = await tx.room.findUnique({ where: { id: roomId } });
+    if (!room || room.status === "WAITING" || room.status === "ENDED") return;
+
+    const seq = parseBallSequence(room.ballSequence);
+    if (seq.length === 0) return;
+    const now = getServerTime();
+    const revealedCount = computeRevealedCount(room, now);
+    if (revealedCount <= room.lastEvalDrawIndex) return; // sin bolillas nuevas
+
+    const drawn = seq.slice(0, revealedCount);
+    const drawnSet = new Set(drawn);
+    await ensureDrawsPersisted(tx, roomId, seq, revealedCount);
+
+    // Cartones activos (ACTIVE = en juego, incluye los que ya ganaron Línea/Esquinas)
+    const tickets = await tx.ticket.findMany({
+      where: { roomId, status: "ACTIVE" },
+    });
+
+    let lineTriggeredPause = false;
+    let bingoTriggeredEnd = false;
+
+    for (const ticket of tickets) {
+      const grid = normalizeGrid(ticket.grid);
+
+      // Línea
+      if (hasLine(grid, drawnSet)) {
+        const r = await creditWin(tx, room, ticket, "LINE", revealedCount, drawnSet);
+        if (r.registered && r.firstInRoom) lineTriggeredPause = true;
+      }
+      // Esquinas
+      if (hasFourCorners(grid, drawnSet)) {
+        await creditWin(tx, room, ticket, "CORNERS", revealedCount, drawnSet);
+      }
+      // Bingo
+      if (hasBingo(grid, drawnSet)) {
+        const r = await creditWin(tx, room, ticket, "BINGO", revealedCount, drawnSet);
+        if (r.registered && r.firstInRoom) bingoTriggeredEnd = true;
+      }
+    }
+
+    // Pausa automática por 1ra Línea (si la sala estaba corriendo)
+    if (lineTriggeredPause && room.status === "RUNNING") {
+      await tx.room.update({
+        where: { id: roomId },
+        data: { pausedAt: new Date(now), status: "PAUSED" },
+      });
+    }
+    // Fin automático por 1er Bingo
+    if (bingoTriggeredEnd) {
+      await tx.room.update({
+        where: { id: roomId },
+        data: { endedAt: new Date(now), status: "ENDED" },
+      });
+    }
+
+    await tx.room.update({ where: { id: roomId }, data: { lastEvalDrawIndex: revealedCount } });
+  }).catch(() => {
+    /* la auto-detección es best-effort; no debe romper el /state */
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  CLAIM (manual) — fallback del jugador. Usa creditWin. Permite multiganancia.
 // ─────────────────────────────────────────────────────────────────────────────
 export async function claim(
   userId: string,
@@ -274,17 +454,11 @@ export async function claim(
   winnersCount: number;
   drawIndex: number;
   reason: string | null;
+  claimId?: string;
 }> {
   return db.$transaction(async (tx) => {
-    // Bloqueo de fila room + user => serializa reclamos concurrentes.
-    await tx.room.update({
-      where: { id: roomId },
-      data: { updatedAt: new Date() },
-    });
-    await tx.user.update({
-      where: { id: userId },
-      data: { updatedAt: new Date() },
-    });
+    await tx.room.update({ where: { id: roomId }, data: { updatedAt: new Date() } });
+    await tx.user.update({ where: { id: userId }, data: { updatedAt: new Date() } });
 
     const room = await tx.room.findUnique({ where: { id: roomId } });
     if (!room) throw notFound("Sala no encontrada");
@@ -295,11 +469,10 @@ export async function claim(
     if (!ticket || ticket.roomId !== roomId || ticket.userId !== userId) {
       throw forbidden("Cartón inválido");
     }
-    if (ticket.status !== "ACTIVE") {
-      throw badRequest("El cartón ya fue premiado o cancelado");
-    }
+    // Multiganancia: solo bloquea cartones terminales (Bingo ganado) o cancelados.
+    if (ticket.status === "WON_BINGO") throw badRequest("Este cartón ya completó Bingo");
+    if (ticket.status === "CANCELLED") throw badRequest("El cartón está cancelado");
 
-    // Estado determinístico
     const seq = parseBallSequence(room.ballSequence);
     if (seq.length === 0) throw badRequest("El sorteo no tiene secuencia");
     const now = getServerTime();
@@ -309,93 +482,47 @@ export async function claim(
     await ensureDrawsPersisted(tx, roomId, seq, revealedCount);
 
     const grid = normalizeGrid(ticket.grid);
-    const patternValid = validatePattern(grid, drawnSet, type);
+    const patternValid =
+      type === "LINE"
+        ? hasLine(grid, drawnSet)
+        : type === "CORNERS"
+          ? hasFourCorners(grid, drawnSet)
+          : hasBingo(grid, drawnSet);
 
-    // Co-ganadores: claims válidos previos del mismo tipo
-    const existing = await tx.claim.findMany({
-      where: { roomId, type, valid: true },
-      orderBy: { drawIndex: "asc" },
-    });
-    const firstIdx = existing.length ? existing[0].drawIndex : null;
     const drawIndex = revealedCount;
 
-    // Válido si el patrón se completa Y (es el primero O está en el mismo
-    // drawIndex que el primer ganador => co-ganador).
-    const valid =
-      patternValid && (firstIdx === null || drawIndex === firstIdx);
-
-    let reason: string | null = null;
-    if (!valid && !patternValid) reason = "Patrón no completado con las bolillas cantadas";
-    if (!valid && patternValid && firstIdx !== null && drawIndex > firstIdx) {
-      reason = "Reclamo tardío: otro jugador ganó este premio antes";
+    if (!patternValid) {
+      // Registrar claim inválido para auditoría
+      await tx.claim.create({
+        data: {
+          roomId,
+          userId,
+          ticketId,
+          type,
+          valid: false,
+          drawIndex,
+          reason: "Patrón no completado con las bolillas cantadas",
+        },
+      });
+      return { valid: false, prizeAwarded: 0, winnersCount: 0, drawIndex, reason: "Patrón no completado con las bolillas cantadas" };
     }
 
-    const claimRow = await tx.claim.create({
-      data: {
-        roomId,
-        userId,
-        ticketId,
-        type,
-        valid,
-        drawIndex,
-        prizeAwarded: 0,
-        reason,
-      },
-    });
+    const result = await creditWin(tx, room, ticket, type, drawIndex, drawnSet);
 
-    if (!valid) {
+    if (!result.registered) {
+      const reason =
+        result.reason === "already_won"
+          ? "Este cartón ya ganó este premio"
+          : "Reclamo tardío: otro jugador ganó este premio antes";
+      await tx.claim.create({
+        data: { roomId, userId, ticketId, type, valid: false, drawIndex, reason },
+      });
       return { valid: false, prizeAwarded: 0, winnersCount: 0, drawIndex, reason };
     }
 
-    // Marcar cartón como ganador
-    const ticketStatus =
-      type === "LINE"
-        ? "WON_LINE"
-        : type === "CORNERS"
-          ? "WON_CORNERS"
-          : "WON_BINGO";
-    await tx.ticket.update({
-      where: { id: ticketId },
-      data: { status: ticketStatus },
-    });
-
-    // Cohorte de co-ganadores (mismo tipo, mismo drawIndex ganador)
-    const winIdx = firstIdx ?? drawIndex;
-    const cohort = await tx.claim.findMany({
-      where: { roomId, type, valid: true, drawIndex: winIdx },
-    });
-    const n = Math.max(1, cohort.length);
-    const prizeTotal =
-      type === "LINE"
-        ? room.prizeLine
-        : type === "CORNERS"
-          ? room.prizeCorners
-          : room.prizeBingo;
-    const perHead = Math.floor(prizeTotal / n);
-
-    // Acreditar/ajustar a cada co-ganador (delta respecto a lo ya acreditado)
-    for (const cw of cohort) {
-      const delta = perHead - cw.prizeAwarded;
-      if (delta !== 0) {
-        await adjustBalance(tx, {
-          userId: cw.userId,
-          amount: delta,
-          type: "PRIZE",
-          roomId,
-          referenceType: "Claim",
-          referenceId: cw.id,
-          description: `Premio ${type} (${cohort.indexOf(cw) + 1} de ${n})`,
-        });
-        await tx.claim.update({
-          where: { id: cw.id },
-          data: { prizeAwarded: perHead },
-        });
-      }
-    }
-
-    // Pausa (Línea) o fin (Bingo) en el primer ganador
-    if (firstIdx === null) {
-      if (type === "LINE") {
+    // Pausa/fin en el primer ganador (consistencia con auto-detección)
+    if (result.firstInRoom) {
+      if (type === "LINE" && room.status === "RUNNING") {
         await tx.room.update({
           where: { id: roomId },
           data: { pausedAt: new Date(now), status: "PAUSED" },
@@ -410,50 +537,23 @@ export async function claim(
 
     return {
       valid: true,
-      prizeAwarded: perHead,
-      winnersCount: n,
+      prizeAwarded: result.prizeAwarded ?? 0,
+      winnersCount: result.winnersCount ?? 1,
       drawIndex,
       reason: null,
+      claimId: result.claimId,
     };
   });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  SCHEDULE / CANCEL — programa auto-inicio (lo dispara un cron externo)
-// ─────────────────────────────────────────────────────────────────────────────
-export async function scheduleRoom(
-  hostUserId: string,
-  roomId: string,
-  startAtISO: string,
-): Promise<Room> {
-  const room = await db.room.findUnique({ where: { id: roomId } });
-  if (!room) throw notFound("Sala no encontrada");
-  if (room.hostId !== hostUserId) throw forbidden("Solo el anfitrión puede programar");
-  const when = new Date(startAtISO);
-  if (Number.isNaN(when.getTime())) throw badRequest("Fecha/hora inválida");
-  return db.room.update({
-    where: { id: roomId },
-    data: { scheduledStartAt: when },
-  });
-}
-
-export async function cancelSchedule(
-  hostUserId: string,
-  roomId: string,
-): Promise<Room> {
-  const room = await db.room.findUnique({ where: { id: roomId } });
-  if (!room) throw notFound("Sala no encontrada");
-  if (room.hostId !== hostUserId) throw forbidden("Solo el anfitrión puede cancelar");
-  return db.room.update({
-    where: { id: roomId },
-    data: { scheduledStartAt: null },
-  });
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 //  PUBLIC STATE — estado canónico consumido por PWA + SSE (con near-miss)
+//  Ejecuta evaluateRoomWins antes de leer para auto-detectar premios.
 // ─────────────────────────────────────────────────────────────────────────────
 export async function getPublicState(roomId: string): Promise<PublicRoomState | null> {
+  // Auto-detección best-effort antes de leer el estado.
+  await evaluateRoomWins(roomId);
+
   const room = await db.room.findUnique({ where: { id: roomId } });
   if (!room) return null;
 
@@ -468,18 +568,13 @@ export async function getPublicState(roomId: string): Promise<PublicRoomState | 
   const drawn = seq.slice(0, revealedCount);
   const drawnSet = new Set(drawn);
 
-  // Backfill draws de auditoría (best-effort, fuera de transacción)
   if (revealedCount > 0) {
-    await ensureDrawsPersisted(db, roomId, seq, revealedCount).catch(() => {
-      /* auditoría best-effort */
-    });
+    await ensureDrawsPersisted(db, roomId, seq, revealedCount).catch(() => {});
   }
 
   const participants = await db.roomParticipant.findMany({
     where: { roomId },
-    include: {
-      user: { select: { id: true, name: true, balance: true } },
-    },
+    include: { user: { select: { id: true, name: true, balance: true } } },
   });
 
   const tickets = await db.ticket.findMany({
@@ -487,7 +582,6 @@ export async function getPublicState(roomId: string): Promise<PublicRoomState | 
     select: { id: true, userId: true, grid: true },
   });
 
-  // near-miss por participante
   const participantMap = new Map<
     string,
     { userId: string; name: string; balance: number; ticketCount: number; nearMiss: boolean }
@@ -516,9 +610,7 @@ export async function getPublicState(roomId: string): Promise<PublicRoomState | 
     orderBy: { createdAt: "asc" },
   });
 
-  const nearMissCount = Array.from(participantMap.values()).filter(
-    (p) => p.nearMiss,
-  ).length;
+  const nearMissCount = Array.from(participantMap.values()).filter((p) => p.nearMiss).length;
 
   return {
     id: room.id,
@@ -537,12 +629,10 @@ export async function getPublicState(roomId: string): Promise<PublicRoomState | 
     intervalSec: room.intervalSec,
     currentRound: room.currentRound,
     cardPrice: room.cardPrice,
-    prizes: {
-      line: room.prizeLine,
-      corners: room.prizeCorners,
-      bingo: room.prizeBingo,
-    },
+    prizes: { line: room.prizeLine, corners: room.prizeCorners, bingo: room.prizeBingo },
     currency: room.currency,
+    isPublic: room.isPublic,
+    inviteToken: room.inviteToken,
     participants: Array.from(participantMap.values()),
     nearMissCount,
     claims: claims.map((c) => ({
@@ -558,12 +648,21 @@ export async function getPublicState(roomId: string): Promise<PublicRoomState | 
   };
 }
 
-/** Devuelve las salas activas (para lobby en ETAPA 4). */
+/** Salas públicas activas para el lobby (saldo > 0 requerido en el frontend). */
 export async function listActiveRooms(): Promise<
-  Array<{ id: string; token: string; status: string; hostName: string; participants: number; currentRound: number }>
+  Array<{
+    id: string;
+    token: string;
+    status: string;
+    hostName: string;
+    participants: number;
+    currentRound: number;
+    cardPrice: number;
+    isPublic: boolean;
+  }>
 > {
   const rooms = await db.room.findMany({
-    where: { status: { in: ["WAITING", "RUNNING", "PAUSED"] } },
+    where: { status: { in: ["WAITING", "RUNNING", "PAUSED"] }, isPublic: true },
     include: {
       host: { select: { name: true } },
       _count: { select: { participants: true } },
@@ -578,5 +677,7 @@ export async function listActiveRooms(): Promise<
     hostName: r.host.name,
     participants: r._count.participants,
     currentRound: r.currentRound,
+    cardPrice: r.cardPrice,
+    isPublic: r.isPublic,
   }));
 }

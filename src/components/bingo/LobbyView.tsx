@@ -1,7 +1,9 @@
 "use client";
-// Lobby: salas activas, crear sala (con config de premios) y unirse por código.
+// Lobby: salas activas (visibles solo si saldo > 0), crear sala (ADMIN, USD,
+// pública/privada) y unirse por código o enlace. Economía en USD.
 import { useEffect, useState } from "react";
 import { apiFetch, useApp } from "@/lib/store";
+import { formatUSDShort, dollarsToCents, MIN_CARD_PRICE_CENTS } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,8 +16,9 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
-import { ArrowRight, Plus, Users } from "lucide-react";
+import { ArrowRight, Plus, Users, Wallet } from "lucide-react";
 
 interface ActiveRoom {
   id: string;
@@ -24,21 +27,24 @@ interface ActiveRoom {
   hostName: string;
   participants: number;
   currentRound: number;
+  cardPrice: number;
+  isPublic: boolean;
 }
 
 export function LobbyView() {
-  const { openRoom, user } = useApp();
+  const { openRoom, user, setView } = useApp();
   const [rooms, setRooms] = useState<ActiveRoom[]>([]);
   const [loading, setLoading] = useState(true);
   const [joinToken, setJoinToken] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
 
-  // Config de nueva sala
-  const [cardPrice, setCardPrice] = useState(100);
-  const [prizeLine, setPrizeLine] = useState(100);
-  const [prizeCorners, setPrizeCorners] = useState(80);
-  const [prizeBingo, setPrizeBingo] = useState(300);
+  // Config de nueva sala (en dólares — se convierten a centavos al enviar)
+  const [cardPriceUsd, setCardPriceUsd] = useState(1);
+  const [prizeLineUsd, setPrizeLineUsd] = useState(5);
+  const [prizeCornersUsd, setPrizeCornersUsd] = useState(4);
+  const [prizeBingoUsd, setPrizeBingoUsd] = useState(20);
   const [intervalSec, setIntervalSec] = useState(5);
+  const [isPublic, setIsPublic] = useState(true);
   const [creating, setCreating] = useState(false);
 
   const refresh = async () => {
@@ -75,11 +81,23 @@ export function LobbyView() {
   };
 
   const handleCreate = async () => {
+    const cardPrice = dollarsToCents(cardPriceUsd);
+    if (cardPrice < MIN_CARD_PRICE_CENTS) {
+      toast.error("El precio mínimo por cartón es $1.00 USD");
+      return;
+    }
     setCreating(true);
     try {
       const d = await apiFetch<{ roomId: string; token: string }>("/api/rooms", {
         method: "POST",
-        body: JSON.stringify({ cardPrice, prizeLine, prizeCorners, prizeBingo, intervalSec }),
+        body: JSON.stringify({
+          cardPrice,
+          prizeLine: dollarsToCents(prizeLineUsd),
+          prizeCorners: dollarsToCents(prizeCornersUsd),
+          prizeBingo: dollarsToCents(prizeBingoUsd),
+          intervalSec,
+          isPublic,
+        }),
       });
       toast.success(`Sala ${d.token} creada`);
       setCreateOpen(false);
@@ -93,6 +111,8 @@ export function LobbyView() {
 
   const statusLabel = (s: string) =>
     s === "WAITING" ? "Esperando" : s === "RUNNING" ? "En juego" : s === "PAUSED" ? "Pausada" : s;
+
+  const hasBalance = (user?.balance ?? 0) > 0;
 
   return (
     <div className="mx-auto max-w-3xl space-y-5 px-4 py-5">
@@ -112,28 +132,38 @@ export function LobbyView() {
               </DialogTrigger>
               <DialogContent className="max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
-                  <DialogTitle>Configurar nueva sala</DialogTitle>
+                  <DialogTitle>Configurar nueva sala (USD)</DialogTitle>
                 </DialogHeader>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
-                    <Label>Precio cartón</Label>
-                    <Input type="number" value={cardPrice} onChange={(e) => setCardPrice(Number(e.target.value))} />
+                    <Label>Precio cartón (USD)</Label>
+                    <Input type="number" min={1} step={0.5} value={cardPriceUsd} onChange={(e) => setCardPriceUsd(Number(e.target.value))} />
+                    <span className="text-[0.65rem] text-muted-foreground">Mín. $1.00</span>
                   </div>
                   <div className="space-y-1">
                     <Label>Intervalo (seg)</Label>
-                    <Input type="number" value={intervalSec} onChange={(e) => setIntervalSec(Number(e.target.value))} />
+                    <Input type="number" min={1} value={intervalSec} onChange={(e) => setIntervalSec(Number(e.target.value))} />
                   </div>
                   <div className="space-y-1">
-                    <Label>Premio Línea</Label>
-                    <Input type="number" value={prizeLine} onChange={(e) => setPrizeLine(Number(e.target.value))} />
+                    <Label>Premio Línea (USD)</Label>
+                    <Input type="number" min={0} step={0.5} value={prizeLineUsd} onChange={(e) => setPrizeLineUsd(Number(e.target.value))} />
                   </div>
                   <div className="space-y-1">
-                    <Label>Premio Esquinas</Label>
-                    <Input type="number" value={prizeCorners} onChange={(e) => setPrizeCorners(Number(e.target.value))} />
+                    <Label>Premio Esquinas (USD)</Label>
+                    <Input type="number" min={0} step={0.5} value={prizeCornersUsd} onChange={(e) => setPrizeCornersUsd(Number(e.target.value))} />
                   </div>
                   <div className="col-span-2 space-y-1">
-                    <Label>Premio Bingo</Label>
-                    <Input type="number" value={prizeBingo} onChange={(e) => setPrizeBingo(Number(e.target.value))} />
+                    <Label>Premio Bingo (USD)</Label>
+                    <Input type="number" min={0} step={1} value={prizeBingoUsd} onChange={(e) => setPrizeBingoUsd(Number(e.target.value))} />
+                  </div>
+                  <div className="col-span-2 flex items-center justify-between rounded-md bg-secondary/40 px-3 py-2">
+                    <div>
+                      <div className="text-sm font-medium">Sala pública</div>
+                      <div className="text-[0.65rem] text-muted-foreground">
+                        {isPublic ? "Visible en el lobby" : "Solo accesible por enlace de invitación"}
+                      </div>
+                    </div>
+                    <Switch checked={isPublic} onCheckedChange={setIsPublic} />
                   </div>
                 </div>
                 <Button onClick={handleCreate} disabled={creating} className="mt-2 w-full">
@@ -167,7 +197,7 @@ export function LobbyView() {
         </Card>
       </div>
 
-      {/* Salas activas */}
+      {/* Salas activas — solo visibles si saldo > 0 */}
       <div>
         <div className="mb-2 flex items-center justify-between">
           <h2 className="text-lg font-bold">Salas activas</h2>
@@ -175,55 +205,72 @@ export function LobbyView() {
             {loading ? "Cargando…" : "Actualizar"}
           </button>
         </div>
-        {rooms.length === 0 ? (
+        {!hasBalance ? (
+          <Card className="border-gold/40 bg-gold/5">
+            <CardContent className="flex flex-col items-center gap-3 py-8 text-center">
+              <Wallet className="h-8 w-8 text-gold" />
+              <div className="text-sm">
+                <div className="font-bold text-gold">Saldo insuficiente</div>
+                <div className="mt-1 text-muted-foreground">
+                  Recarga saldo para ver y entrar a las salas activas.
+                </div>
+              </div>
+              <Button onClick={() => setView("wallet")} size="sm">Recargar ahora</Button>
+            </CardContent>
+          </Card>
+        ) : rooms.length === 0 ? (
           <Card className="border-dashed border-border/40 bg-card/50">
             <CardContent className="py-8 text-center text-sm text-muted-foreground">
-              No hay salas activas. ¡Crea la primera!
+              No hay salas públicas activas{user?.role === "ADMIN" ? ". Crea una nueva." : " en este momento."}
             </CardContent>
           </Card>
         ) : (
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            {rooms.map((r) => (
-              <Card key={r.id} className="border-border/60 bg-card/80">
-                <CardContent className="flex items-center justify-between p-3">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono font-black text-gold">{r.token}</span>
-                      <Badge variant="secondary" className="text-[0.6rem]">
-                        {statusLabel(r.status)}
-                      </Badge>
+            {rooms.map((r) => {
+              const canAfford = (user?.balance ?? 0) >= r.cardPrice;
+              return (
+                <Card key={r.id} className="border-border/60 bg-card/80">
+                  <CardContent className="flex items-center justify-between p-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono font-black text-gold">{r.token}</span>
+                        <Badge variant="secondary" className="text-[0.6rem]">
+                          {statusLabel(r.status)}
+                        </Badge>
+                      </div>
+                      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+                        <span className="flex items-center gap-1">
+                          <Users className="h-3 w-3" /> {r.participants}
+                        </span>
+                        <span>Cartón: {formatUSDShort(r.cardPrice)}</span>
+                        <span>Ronda {r.currentRound}</span>
+                      </div>
                     </div>
-                    <div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
-                      <span className="flex items-center gap-1">
-                        <Users className="h-3 w-3" /> {r.participants}
-                      </span>
-                      <span>Anfitrión: {r.hostName}</span>
-                      <span>Ronda {r.currentRound}</span>
-                    </div>
-                  </div>
-                  <Button
-                    size="sm"
-                    onClick={async () => {
-                      try {
-                        await apiFetch(`/api/rooms/${r.id}/join`, { method: "POST" });
-                        openRoom(r.id, r.token);
-                      } catch {
-                        openRoom(r.id, r.token);
-                      }
-                    }}
-                  >
-                    Entrar
-                  </Button>
-                </CardContent>
-              </Card>
-            ))}
+                    <Button
+                      size="sm"
+                      disabled={!canAfford}
+                      onClick={async () => {
+                        try {
+                          await apiFetch(`/api/rooms/${r.id}/join`, { method: "POST" });
+                          openRoom(r.id, r.token);
+                        } catch {
+                          openRoom(r.id, r.token);
+                        }
+                      }}
+                    >
+                      {canAfford ? "Entrar" : "Sin saldo"}
+                    </Button>
+                  </CardContent>
+                </Card>
+              );
+            })}
           </div>
         )}
       </div>
 
       {user?.role === "PLAYER" && (
         <p className="text-center text-[0.7rem] text-muted-foreground">
-          Pídele el código de sala al organizador para unirte a una partida.
+          Pídele el código o enlace de sala al organizador para unirte a una partida.
         </p>
       )}
     </div>

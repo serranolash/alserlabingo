@@ -2,6 +2,7 @@
 import { db } from "@/lib/db";
 import { hashPassword } from "@/lib/auth/password";
 import { maybeBootstrapAdmin, requireUser, setSessionCookie } from "@/lib/auth/session";
+import { WELCOME_BONUS_CENTS } from "@/lib/format";
 import { json, readBody, withErrors } from "@/lib/api";
 
 export const POST = withErrors(async (request: Request) => {
@@ -24,10 +25,9 @@ export const POST = withErrors(async (request: Request) => {
 
   const passwordHash = await hashPassword(password);
   const role = maybeBootstrapAdmin(email) ? "ADMIN" : "PLAYER";
-  const initialCredits = Number(process.env.INITIAL_CREDITS ?? 1000);
 
   const user = await db.user.create({
-    data: { email, name, passwordHash, role, balance: initialCredits },
+    data: { email, name, passwordHash, role, balance: WELCOME_BONUS_CENTS },
   });
 
   await setSessionCookie({ sub: user.id, email: user.email, role: user.role });

@@ -49,20 +49,21 @@ export interface PreferenceResult {
  */
 export async function createPreference(
   userId: string,
-  amount: number,
+  amountCents: number,
 ): Promise<PreferenceResult> {
   const token = accessToken();
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+  const dollars = (amountCents ?? 0) / 100;
 
   const body = {
     items: [
       {
         id: "credits",
-        title: `Recarga de ${amount} créditos — Alserla Bingo`,
+        title: `Recarga $${dollars.toFixed(2)} USD — Alserla Bingo`,
         description: "Créditos para cartones de Alserla Bingo",
         quantity: 1,
-        unit_price: amount,
-        currency_id: process.env.DEFAULT_CURRENCY ?? "ARS",
+        unit_price: dollars,
+        currency_id: "USD",
       },
     ],
     external_reference: userId,
@@ -177,12 +178,13 @@ export async function processPaymentNotification(
   if (!userId) {
     return { skipped: true, status: "missing_external_reference" };
   }
-  const amount = Math.round(Number(payment.transaction_amount ?? 0));
-  if (amount <= 0) return { skipped: true, status: "invalid_amount" };
+  // transaction_amount viene en dólares (USD) => convertir a centavos.
+  const amountCents = Math.round(Number(payment.transaction_amount ?? 0) * 100);
+  if (amountCents <= 0) return { skipped: true, status: "invalid_amount" };
 
   const result = await processApprovedPayment({
     userId,
-    amount,
+    amount: amountCents,
     provider: "MERCADOPAGO",
     externalId: String(payment.id),
     raw: payment,

@@ -108,7 +108,7 @@ export function AuthView() {
                   {busy ? "Creando…" : "Crear cuenta"}
                 </Button>
                 <p className="text-center text-[0.7rem] text-muted-foreground">
-                  Recibes {process.env.NEXT_PUBLIC_INITIAL_CREDITS ?? 1000} créditos de bienvenida
+                  Recibes $5.00 USD de saldo de bienvenida
                 </p>
               </form>
             </TabsContent>

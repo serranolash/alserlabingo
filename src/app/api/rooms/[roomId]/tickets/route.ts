@@ -1,4 +1,4 @@
-// GET /api/rooms/[roomId]/tickets — cartones del usuario autenticado en la sala
+// GET /api/rooms/[roomId]/tickets — cartones del usuario + victorias por tipo
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth/session";
 import { json, withErrors } from "@/lib/api";
@@ -17,6 +17,10 @@ export const GET = withErrors(
         status: true,
         createdAt: true,
         purchase: { select: { id: true, quantity: true, unitPrice: true, totalCost: true } },
+        claims: {
+          where: { valid: true },
+          select: { id: true, type: true, prizeAwarded: true, drawIndex: true },
+        },
       },
     });
     return json({ tickets });

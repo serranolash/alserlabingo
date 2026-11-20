@@ -18,19 +18,28 @@ export function AppShell() {
   const { authReady } = useAuth(); // dispara el fetch inicial /api/auth/me
   const { user, view, openRoom, roomId } = useApp();
 
-  // Deep-link ?room=TOKEN y feedback de pago
+  // Deep-link ?room=TOKEN (código), ?invite=TOKEN (enlace privado) y feedback de pago
   useEffect(() => {
     if (!user) return;
     const url = new URL(window.location.href);
+    const inviteToken = url.searchParams.get("invite");
     const roomToken = url.searchParams.get("room");
-    if (roomToken) {
+    if (inviteToken || roomToken) {
       (async () => {
         try {
-          const d = await apiFetch<{ room: { id: string; token: string } }>(
-            `/api/rooms/by-token/${roomToken.toUpperCase()}`,
-          );
-          await apiFetch(`/api/rooms/${d.room.id}/join`, { method: "POST" }).catch(() => {});
-          openRoom(d.room.id, d.room.token);
+          if (inviteToken) {
+            const d = await apiFetch<{ room: { id: string; token: string } }>(
+              `/api/rooms/by-invite/${inviteToken}`,
+            );
+            await apiFetch(`/api/rooms/${d.room.id}/join`, { method: "POST" }).catch(() => {});
+            openRoom(d.room.id, d.room.token);
+          } else if (roomToken) {
+            const d = await apiFetch<{ room: { id: string; token: string } }>(
+              `/api/rooms/by-token/${roomToken.toUpperCase()}`,
+            );
+            await apiFetch(`/api/rooms/${d.room.id}/join`, { method: "POST" }).catch(() => {});
+            openRoom(d.room.id, d.room.token);
+          }
         } catch {
           toast.error("Sala no encontrada");
         }
@@ -42,7 +51,7 @@ export function AppShell() {
     if (payment === "failure") toast.error("El pago fue rechazado.");
     if (payment === "pending") toast.info("Pago pendiente de procesar.");
     if (payment) window.history.replaceState({}, "", "/");
-  }, [user]);
+  }, [user, openRoom]);
 
   if (!authReady) {
     return (

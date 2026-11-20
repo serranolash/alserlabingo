@@ -2,6 +2,7 @@
 // Billetera: saldo, historial ledger y recarga (MercadoPago + transferencia).
 import { useEffect, useState } from "react";
 import { apiFetch, useApp } from "@/lib/store";
+import { formatUSD, formatUSDShort, dollarsToCents } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -51,7 +52,7 @@ export function WalletView() {
   }, []);
 
   const typeLabel = (t: string) =>
-    t === "PURCHASE" ? "Compra" : t === "PRIZE" ? "Premio" : t === "RECHARGE" ? "Recarga" : t === "REFUND" ? "Reembolso" : t;
+    t === "PURCHASE" ? "Compra" : t === "PRIZE" ? "Premio" : t === "RECHARGE" ? "Recarga" : t === "PAYOUT" ? "Retiro" : t === "REFUND" ? "Reembolso" : t;
 
   return (
     <div className="mx-auto max-w-2xl space-y-4 px-4 py-5">
@@ -59,8 +60,8 @@ export function WalletView() {
       <Card className="border-gold/30 bg-gradient-to-br from-card to-card/60">
         <CardContent className="pt-6">
           <div className="text-xs uppercase tracking-wider text-muted-foreground">Saldo disponible</div>
-          <div className="mt-1 text-4xl font-black text-gold tabular-nums">{user?.balance ?? 0}</div>
-          <div className="mt-1 text-xs text-muted-foreground">créditos</div>
+          <div className="mt-1 text-4xl font-black text-gold tabular-nums">{formatUSD(user?.balance ?? 0)}</div>
+          <div className="mt-1 text-xs text-muted-foreground">disponible</div>
           <Dialog open={rechargeOpen} onOpenChange={setRechargeOpen}>
             <DialogTrigger asChild>
               <Button className="mt-4 w-full gap-1">
@@ -99,9 +100,9 @@ export function WalletView() {
                   </div>
                   <div className="text-right">
                     <div className={`text-sm font-bold tabular-nums ${e.amount >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
-                      {e.amount >= 0 ? "+" : ""}{e.amount}
+                      {e.amount >= 0 ? "+" : ""}{formatUSDShort(e.amount)}
                     </div>
-                    <div className="text-[0.7rem] text-muted-foreground">{e.balanceAfter}</div>
+                    <div className="text-[0.7rem] text-muted-foreground">{formatUSDShort(e.balanceAfter)}</div>
                   </div>
                 </div>
               ))}
@@ -115,11 +116,11 @@ export function WalletView() {
 
 function RechargeDialog({ onSuccess }: { onSuccess: () => void }) {
   const [tab, setTab] = useState("mp");
-  // MercadoPago
-  const [mpAmount, setMpAmount] = useState(500);
+  // MercadoPago (montos en dólares USD)
+  const [mpAmount, setMpAmount] = useState(5);
   const [mpBusy, setMpBusy] = useState(false);
   // Transferencia
-  const [trAmount, setTrAmount] = useState(500);
+  const [trAmount, setTrAmount] = useState(5);
   const [trMethod, setTrMethod] = useState("Bank Transfer");
   const [trCountry, setTrCountry] = useState("AR");
   const [trRef, setTrRef] = useState("");
@@ -127,11 +128,16 @@ function RechargeDialog({ onSuccess }: { onSuccess: () => void }) {
   const [trBusy, setTrBusy] = useState(false);
 
   const doMercadoPago = async () => {
+    const cents = dollarsToCents(mpAmount);
+    if (cents < 100) {
+      toast.error("Monto mínimo $1.00 USD");
+      return;
+    }
     setMpBusy(true);
     try {
       const d = await apiFetch<{ initPoint: string; configured?: boolean; error?: string }>(
         "/api/payments/mercadopago/preference",
-        { method: "POST", body: JSON.stringify({ amount: mpAmount }) },
+        { method: "POST", body: JSON.stringify({ amount: cents }) },
       );
       if (d.initPoint) {
         window.location.href = d.initPoint;
@@ -144,12 +150,17 @@ function RechargeDialog({ onSuccess }: { onSuccess: () => void }) {
   };
 
   const doTransfer = async () => {
+    const cents = dollarsToCents(trAmount);
+    if (cents < 100) {
+      toast.error("Monto mínimo $1.00 USD");
+      return;
+    }
     setTrBusy(true);
     try {
       await apiFetch("/api/payments/transfers", {
         method: "POST",
         body: JSON.stringify({
-          amount: trAmount,
+          amount: cents,
           paymentMethod: trMethod,
           country: trCountry,
           referenceNumber: trRef,
@@ -178,19 +189,19 @@ function RechargeDialog({ onSuccess }: { onSuccess: () => void }) {
 
         <TabsContent value="mp" className="space-y-3">
           <div className="space-y-1">
-            <Label>Monto (créditos = ARS)</Label>
-            <Input type="number" value={mpAmount} onChange={(e) => setMpAmount(Number(e.target.value))} />
+            <Label>Monto (USD)</Label>
+            <Input type="number" min={1} step={0.5} value={mpAmount} onChange={(e) => setMpAmount(Number(e.target.value))} />
           </div>
           <div className="flex flex-wrap gap-1.5">
-            {[500, 1000, 2000, 5000].map((v) => (
+            {[5, 10, 20, 50].map((v) => (
               <button key={v} onClick={() => setMpAmount(v)}
                 className={`rounded px-3 py-1 text-sm ${mpAmount === v ? "bg-primary text-primary-foreground" : "bg-secondary/60"}`}>
-                {v}
+                ${v}
               </button>
             ))}
           </div>
           <Button onClick={doMercadoPago} disabled={mpBusy} className="w-full">
-            {mpBusy ? "Redirigiendo…" : "Pagar con MercadoPago"}
+            {mpBusy ? "Redirigiendo…" : `Pagar ${formatUSDShort(dollarsToCents(mpAmount))} con MercadoPago`}
           </Button>
           <p className="text-center text-[0.7rem] text-muted-foreground">
             Checkout Pro · Acreditación automática vía webhook
@@ -199,8 +210,8 @@ function RechargeDialog({ onSuccess }: { onSuccess: () => void }) {
 
         <TabsContent value="tr" className="space-y-3">
           <div className="space-y-1">
-            <Label>Monto (créditos)</Label>
-            <Input type="number" value={trAmount} onChange={(e) => setTrAmount(Number(e.target.value))} />
+            <Label>Monto (USD)</Label>
+            <Input type="number" min={1} step={0.5} value={trAmount} onChange={(e) => setTrAmount(Number(e.target.value))} />
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div className="space-y-1">
