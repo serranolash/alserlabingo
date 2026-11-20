@@ -97,7 +97,8 @@ export function LobbyView() {
   return (
     <div className="mx-auto max-w-3xl space-y-5 px-4 py-5">
       {/* Acciones rápidas */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <div className={`grid grid-cols-1 gap-3 ${user?.role === "ADMIN" ? "sm:grid-cols-2" : ""}`}>
+        {user?.role === "ADMIN" && (
         <Card className="border-border/60 bg-card/80">
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-base">
@@ -142,6 +143,7 @@ export function LobbyView() {
             </Dialog>
           </CardContent>
         </Card>
+        )}
 
         <Card className="border-border/60 bg-card/80">
           <CardHeader className="pb-3">
@@ -221,7 +223,7 @@ export function LobbyView() {
 
       {user?.role === "PLAYER" && (
         <p className="text-center text-[0.7rem] text-muted-foreground">
-          ¿Quieres ser anfitrión? Crea una sala y invita a tus amigos con el código.
+          Pídele el código de sala al organizador para unirte a una partida.
         </p>
       )}
     </div>

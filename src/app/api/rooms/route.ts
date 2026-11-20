@@ -1,12 +1,12 @@
-// POST /api/rooms — crear sala (host autenticado)
-// GET  /api/rooms/active — listar salas activas (lobby)
+// POST /api/rooms — crear sala (SOLO ADMIN: el operador del bingo crea las salas)
+// GET  /api/rooms/active — listar salas activas (lobby, todos los usuarios)
 import { createRoom, listActiveRooms } from "@/lib/game/room-service";
-import { requireUser } from "@/lib/auth/session";
+import { requireAdmin } from "@/lib/auth/session";
 import { json, readBody, withErrors } from "@/lib/api";
 
 export const POST = withErrors(async (request: Request) => {
-  const user = await requireUser();
-  if (!user) return json({ error: "No autenticado" }, 401);
+  const user = await requireAdmin();
+  if (!user) return json({ error: "Solo el administrador puede crear salas" }, 403);
 
   const body = await readBody<{
     cardPrice?: number;
