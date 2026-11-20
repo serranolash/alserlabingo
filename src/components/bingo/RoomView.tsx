@@ -186,14 +186,33 @@ export function RoomView() {
     }
   };
 
+  const [inviteUrl, setInviteUrl] = useState("");
+  useEffect(() => {
+    if (state && typeof window !== "undefined") {
+      setInviteUrl(`${window.location.origin}/invite/${state.inviteToken}`);
+    }
+  }, [state?.inviteToken, state]);
+
   const copyInvite = async () => {
-    if (!state) return;
-    const url = `${window.location.origin}/invite/${state.inviteToken}`;
+    if (!inviteUrl) return;
     try {
-      await navigator.clipboard.writeText(url);
-      toast.success("Enlace de invitación copiado");
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(inviteUrl);
+      } else {
+        // Fallback para contextos no seguros (preview iframe)
+        const ta = document.createElement("textarea");
+        ta.value = inviteUrl;
+        ta.style.position = "fixed";
+        ta.style.top = "-9999px";
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+      }
+      toast.success("Enlace copiado");
     } catch {
-      toast.info(`Enlace: ${url}`);
+      toast.info("Copia manualmente: " + inviteUrl);
     }
   };
 
@@ -353,14 +372,35 @@ export function RoomView() {
                   )}
                 </div>
                 <div className="flex items-center justify-between gap-2">
-                  {/* Copiar enlace de invitación — visible para el host */}
-                  <Button onClick={copyInvite} size="sm" variant="ghost" className="gap-1 text-xs">
-                    <Copy className="h-3.5 w-3.5" /> Copiar enlace de invitación
-                  </Button>
                   <span className="text-xs text-muted-foreground">
                     {state.isPublic ? "Pública" : "Privada"} · {state.participants.length} jugadores
                   </span>
                 </div>
+              </div>
+            )}
+
+            {/* Enlace de invitación — visible para el host, con URL completa */}
+            {isHost && inviteUrl && (
+              <div className="rounded-xl border border-gold/30 bg-card/60 p-3">
+                <div className="mb-1.5 flex items-center justify-between">
+                  <span className="text-xs font-bold uppercase tracking-wider text-gold">
+                    Enlace de invitación
+                  </span>
+                  <Button onClick={copyInvite} size="sm" className="gap-1 h-7">
+                    <Copy className="h-3.5 w-3.5" /> Copiar
+                  </Button>
+                </div>
+                <input
+                  readOnly
+                  value={inviteUrl}
+                  onFocus={(e) => e.currentTarget.select()}
+                  className="w-full truncate rounded-md border border-input bg-background px-2 py-1.5 text-xs font-mono text-foreground/90"
+                />
+                <p className="mt-1 text-[0.65rem] text-muted-foreground">
+                  {state.isPublic
+                    ? "Sala pública (también visible en el lobby)"
+                    : "Sala privada: comparte este enlace para que entren"}
+                </p>
               </div>
             )}
 

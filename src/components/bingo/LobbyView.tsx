@@ -66,15 +66,26 @@ export function LobbyView() {
   }, []);
 
   const handleJoin = async () => {
-    const token = joinToken.trim().toUpperCase();
-    if (!token) return;
+    const raw = joinToken.trim();
+    if (!raw) return;
     try {
-      const d = await apiFetch<{ room: { id: string; token: string } }>(
-        `/api/rooms/by-token/${token}`,
-      );
-      await apiFetch(`/api/rooms/${d.room.id}/join`, { method: "POST" });
-      toast.success(`Unido a la sala ${token}`);
-      openRoom(d.room.id, d.room.token);
+      let room: { id: string; token: string };
+      // Detectar enlace de invitación (/invite/TOKEN) vs código corto
+      const inviteMatch = raw.match(/\/invite\/([^/?#]+)/i);
+      if (inviteMatch) {
+        const d = await apiFetch<{ room: { id: string; token: string } }>(
+          `/api/rooms/by-invite/${inviteMatch[1]}`,
+        );
+        room = d.room;
+      } else {
+        const d = await apiFetch<{ room: { id: string; token: string } }>(
+          `/api/rooms/by-token/${raw.toUpperCase()}`,
+        );
+        room = d.room;
+      }
+      await apiFetch(`/api/rooms/${room.id}/join`, { method: "POST" });
+      toast.success(`Unido a la sala ${room.token}`);
+      openRoom(room.id, room.token);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Sala no encontrada");
     }
@@ -178,20 +189,19 @@ export function LobbyView() {
         <Card className="border-border/60 bg-card/80">
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-base">
-              <ArrowRight className="h-4 w-4 text-gold" /> Unirse con código
+              <ArrowRight className="h-4 w-4 text-gold" /> Unirse con código o enlace
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="flex gap-2">
+            <div className="flex flex-col gap-2">
               <Input
                 value={joinToken}
-                onChange={(e) => setJoinToken(e.target.value.toUpperCase())}
-                placeholder="EJ: ABC123"
-                maxLength={6}
+                onChange={(e) => setJoinToken(e.target.value)}
+                placeholder="Pega el enlace de invitación o el código (EJ: ABC123)"
                 onKeyDown={(e) => e.key === "Enter" && handleJoin()}
-                className="font-mono uppercase"
+                className="text-sm"
               />
-              <Button onClick={handleJoin}>Unirse</Button>
+              <Button onClick={handleJoin} className="w-full">Unirse a la sala</Button>
             </div>
           </CardContent>
         </Card>

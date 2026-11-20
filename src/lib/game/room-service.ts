@@ -112,8 +112,8 @@ export async function createRoom(
 // ─────────────────────────────────────────────────────────────────────────────
 //  JOIN ROOM — por código corto (públicas) o por inviteToken (privadas)
 // ─────────────────────────────────────────────────────────────────────────────
-export async function joinRoom(userId: string, token: string): Promise<Room> {
-  const room = await db.room.findUnique({ where: { token: token.toUpperCase() } });
+export async function joinRoom(userId: string, roomId: string): Promise<Room> {
+  const room = await db.room.findUnique({ where: { id: roomId } });
   if (!room) throw notFound("Sala no encontrada");
   await db.roomParticipant
     .create({ data: { roomId: room.id, userId } })
