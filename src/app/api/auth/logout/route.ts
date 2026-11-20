@@ -1,0 +1,8 @@
+// POST /api/auth/logout — elimina la cookie de sesión
+import { clearSessionCookie } from "@/lib/auth/session";
+import { json } from "@/lib/api";
+
+export async function POST() {
+  await clearSessionCookie();
+  return json({ ok: true });
+}
