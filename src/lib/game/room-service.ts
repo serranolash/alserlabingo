@@ -1,5 +1,5 @@
 // =============================================================================
-//  ROOM SERVICE — Lógica de negocio transaccional del Bingo 75
+//  ROOM SERVICE — Lógica de negocio transaccional de Alserla Bingo
 //
 //  Corrige TODOS los bugs críticos del repo NestJS original:
 //   - userId se extrae de la SESIÓN (auth), nunca del body.

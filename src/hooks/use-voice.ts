@@ -4,7 +4,7 @@
 // para evitar setState-in-effect y permitir suscripción reactiva.
 import { useCallback, useSyncExternalStore } from "react";
 
-const STORAGE_KEY = "bingo75-voice-enabled";
+const STORAGE_KEY = "alserla-voice-enabled";
 const listeners = new Set<() => void>();
 let enabledState = true; // default
 

@@ -58,8 +58,8 @@ export async function createPreference(
     items: [
       {
         id: "credits",
-        title: `Recarga de ${amount} créditos — Bingo 75`,
-        description: "Créditos para cartones de Bingo 75",
+        title: `Recarga de ${amount} créditos — Alserla Bingo`,
+        description: "Créditos para cartones de Alserla Bingo",
         quantity: 1,
         unit_price: amount,
         currency_id: process.env.DEFAULT_CURRENCY ?? "ARS",
@@ -73,7 +73,7 @@ export async function createPreference(
     },
     auto_return: "approved",
     notification_url: `${appUrl}/api/webhooks/mercadopago`,
-    statement_descriptor: "BINGO75",
+    statement_descriptor: "ALSERLA",
   };
 
   const res = await fetch(PREFERENCES_URL, {

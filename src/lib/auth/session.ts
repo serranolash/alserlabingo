@@ -12,7 +12,7 @@ import type { User } from "@prisma/client";
 import { db } from "@/lib/db";
 import { signSession, verifySession } from "./jwt";
 
-const COOKIE_NAME = process.env.AUTH_COOKIE_NAME ?? "bingo_session";
+const COOKIE_NAME = process.env.AUTH_COOKIE_NAME ?? "alserla_session";
 const TTL_SEC = Number(process.env.AUTH_SESSION_TTL_SEC ?? 604800);
 
 /** Crea la cookie de sesión tras un login/registro exitoso. */

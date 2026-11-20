@@ -25,7 +25,7 @@ export function Header() {
           <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gold text-sm font-black text-[#3a1d05]">
             75
           </div>
-          <span className="font-black tracking-tight text-gold">Bingo75</span>
+          <span className="font-black tracking-tight text-gold">Alserla</span>
         </div>
         <div className="flex items-center gap-2">
           <button

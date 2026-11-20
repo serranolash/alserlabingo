@@ -1,7 +1,7 @@
 {
-  "name": "Bingo 75 — Salas en Vivo",
-  "short_name": "Bingo75",
-  "description": "Bingo 75 en tiempo real con sorteo determinístico, cartones interactivos, locutor de voz y pagos híbridos.",
+  "name": "Alserla Bingo — Salas en Vivo",
+  "short_name": "Alserla",
+  "description": "Alserla Bingo en tiempo real con sorteo determinístico, cartones interactivos, locutor de voz y pagos híbridos.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

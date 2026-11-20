@@ -1,7 +1,7 @@
 // Service Worker — offline-ready shell + cache de assets estáticos.
 // Estrategia: cache-first para assets, network-first para navegación,
 // stale-while-revalidate para la API de estado (mejor esfuerzo offline).
-const CACHE = "bingo75-v1";
+const CACHE = "alserla-v1";
 const SHELL = ["/", "/manifest.json", "/icon-192.png", "/icon-512.png", "/apple-touch-icon.png"];
 
 self.addEventListener("install", (event) => {

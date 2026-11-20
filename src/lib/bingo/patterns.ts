@@ -6,7 +6,7 @@
 //    - LÍNEA: cualquier fila, columna o diagonal completamente marcada.
 //    - CUATRO ESQUINAS: las 4 esquinas marcadas.
 //    - BINGO: todas las celdas no-nulas marcadas (cartón lleno).
-//  Las diagonales SÍ cuentan como línea (regla estándar Bingo 75).
+//  Las diagonales SÍ cuentan como línea (regla estándar del Bingo de 75 bolillas).
 // =============================================================================
 import { CORNER_CELLS, FREE_CELL, GRID_SIZE } from "./constants";
 import type { DrawnSet, Grid, NearMissKind, NearMissResult } from "./types";

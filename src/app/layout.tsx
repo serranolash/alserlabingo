@@ -15,15 +15,15 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Bingo 75 — Salas en Vivo",
+  title: "Alserla Bingo — Salas en Vivo",
   description:
-    "Bingo 75 en tiempo real con sorteo determinístico, cartones interactivos, locutor de voz y pagos híbridos (MercadoPago + transferencias).",
-  applicationName: "Bingo75",
+    "Alserla Bingo en tiempo real con sorteo determinístico, cartones interactivos, locutor de voz y pagos híbridos (MercadoPago + transferencias).",
+  applicationName: "Alserla Bingo",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "Bingo75",
+    title: "Alserla",
   },
   formatDetection: { telephone: false },
   other: {

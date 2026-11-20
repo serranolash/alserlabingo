@@ -54,7 +54,7 @@ export function AuthView() {
         <div className="mx-auto mb-3 flex h-20 w-20 items-center justify-center rounded-full bg-gold text-3xl font-black text-[#3a1d05] shadow-lg">
           75
         </div>
-        <h1 className="text-3xl font-black tracking-tight text-gold">Bingo 75</h1>
+        <h1 className="text-3xl font-black tracking-tight text-gold">Alserla Bingo</h1>
         <p className="mt-1 text-sm text-muted-foreground">Salas en vivo · Sorteo determinístico</p>
       </div>
 
@@ -117,7 +117,7 @@ export function AuthView() {
       </Card>
 
       <footer className="mt-auto pt-8 text-center text-[0.7rem] text-muted-foreground">
-        Bingo 75 · PWA instalable · Pagos híbridos
+        Alserla Bingo · PWA instalable · Pagos híbridos
       </footer>
     </div>
   );

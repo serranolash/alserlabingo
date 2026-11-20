@@ -1,6 +1,6 @@
-# Bingo 75 — Salas en Vivo
+# Alserla Bingo — Salas en Vivo
 
-Plataforma completa de Bingo 75 en tiempo real, construida con **Next.js 16 (App Router)**, **TypeScript**, **Prisma ORM** y **Tailwind CSS**. Frontend **PWA instalable** con sorteo **determinístico stateless** (sin timers en RAM), pagos híbridos (MercadoPago + transferencias manuales) y panel de administración.
+Plataforma completa de Alserla Bingo en tiempo real, construida con **Next.js 16 (App Router)**, **TypeScript**, **Prisma ORM** y **Tailwind CSS**. Frontend **PWA instalable** con sorteo **determinístico stateless** (sin timers en RAM), pagos híbridos (MercadoPago + transferencias manuales) y panel de administración.
 
 ---
 
@@ -225,7 +225,7 @@ npx prisma generate
 ## Estructura del proyecto
 
 ```
-bingo75/
+alserla-bingo/
 ├── prisma/
 │   └── schema.prisma              # 10 modelos (portable SQLite↔Postgres)
 ├── public/

@@ -28,7 +28,7 @@ export function shuffle<T>(input: T[]): T[] {
 }
 
 /**
- * Genera un cartón 5x5 de Bingo 75.
+ * Genera un cartón 5x5 de Alserla Bingo (75 bolillas).
  * Columnas: B(1-15) I(16-30) N(31-45) G(46-60) O(61-75).
  * Cada columna toma 5 números únicos de su rango. Centro [2][2] = null (libre).
  */

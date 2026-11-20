@@ -7,7 +7,7 @@ import { SignJWT, jwtVerify } from "jose";
 const SECRET = new TextEncoder().encode(
   process.env.AUTH_JWT_SECRET ?? "dev-insecure-secret-change-me-please",
 );
-const ISSUER = process.env.AUTH_JWT_ISSUER ?? "bingo75";
+const ISSUER = process.env.AUTH_JWT_ISSUER ?? "alserla-bingo";
 const TTL_SEC = Number(process.env.AUTH_SESSION_TTL_SEC ?? 604800); // 7 días
 
 export interface SessionPayload {

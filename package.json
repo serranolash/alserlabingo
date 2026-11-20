@@ -1,8 +1,8 @@
 {
-  "name": "bingo75",
+  "name": "alserla-bingo",
   "version": "1.0.0",
   "private": true,
-  "description": "Bingo 75 en tiempo real — sorteo determinístico stateless, cartones interactivos, locutor de voz, pagos híbridos (MercadoPago + transferencias) y panel admin. PWA instalable.",
+  "description": "Alserla Bingo en tiempo real — sorteo determinístico stateless, cartones interactivos, locutor de voz, pagos híbridos (MercadoPago + transferencias) y panel admin. PWA instalable.",
   "scripts": {
     "dev": "next dev -p 3000",
     "build": "next build",
