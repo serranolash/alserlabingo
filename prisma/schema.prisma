@@ -29,7 +29,9 @@ datasource db {
 // ─────────────────────────────────────────────────────────────────────────────
 model User {
   id           String   @id @default(cuid())
-  email        String   @unique
+  email        String?  @unique // opcional: adultos mayores pueden registrarse solo con teléfono
+  phone        String?  @unique // número de WhatsApp (login alternativo)
+  username     String?  @unique // usuario corto (login alternativo)
   name         String
   passwordHash String? // null => cuenta solo magic-link (futuro)
   role         String   @default("PLAYER") // PLAYER | HOST | ADMIN

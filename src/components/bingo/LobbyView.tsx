@@ -18,7 +18,8 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
-import { ArrowRight, Plus, Users, Wallet } from "lucide-react";
+import { ArrowRight, Plus, Users, Wallet, Play } from "lucide-react";
+import { PWAInstallBanner } from "./PWAInstallBanner";
 
 interface ActiveRoom {
   id: string;
@@ -31,9 +32,22 @@ interface ActiveRoom {
   isPublic: boolean;
 }
 
+interface MyRoom {
+  id: string;
+  token: string;
+  status: string;
+  hostName: string;
+  isHost: boolean;
+  isPublic: boolean;
+  participants: number;
+  currentRound: number;
+  cardPrice: number;
+}
+
 export function LobbyView() {
   const { openRoom, user, setView } = useApp();
   const [rooms, setRooms] = useState<ActiveRoom[]>([]);
+  const [myRooms, setMyRooms] = useState<MyRoom[]>([]);
   const [loading, setLoading] = useState(true);
   const [joinToken, setJoinToken] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
@@ -50,8 +64,12 @@ export function LobbyView() {
   const refresh = async () => {
     setLoading(true);
     try {
-      const d = await apiFetch<{ rooms: ActiveRoom[] }>("/api/rooms/active");
+      const [d, m] = await Promise.all([
+        apiFetch<{ rooms: ActiveRoom[] }>("/api/rooms/active"),
+        apiFetch<{ rooms: MyRoom[] }>("/api/rooms/mine"),
+      ]);
       setRooms(d.rooms);
+      setMyRooms(m.rooms);
     } catch {
       /* ignore */
     } finally {
@@ -127,6 +145,39 @@ export function LobbyView() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-5 px-4 py-5">
+      {/* Mis Salas en Curso — siempre visibles (públicas o privadas) */}
+      {myRooms.length > 0 && (
+        <div className="space-y-2">
+          <h2 className="text-lg font-bold text-gold">Mis Salas en Curso</h2>
+          {myRooms.map((r) => (
+            <Card key={r.id} className="border-emerald-600/40 bg-emerald-600/5">
+              <CardContent className="flex items-center justify-between gap-3 p-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono font-black text-gold">{r.token}</span>
+                    <Badge variant="secondary" className="text-[0.6rem]">{statusLabel(r.status)}</Badge>
+                    {r.isHost && <Badge className="bg-gold text-[#3a1d05] text-[0.6rem]">Anfitrión</Badge>}
+                    {!r.isPublic && <Badge variant="outline" className="text-[0.6rem]">Privada</Badge>}
+                  </div>
+                  <div className="mt-0.5 text-xs text-muted-foreground">
+                    {r.isHost ? "Tú creaste esta sala" : `Anfitrión: ${r.hostName}`} · {r.participants} jug · Ronda {r.currentRound}
+                  </div>
+                </div>
+                <Button
+                  onClick={() => openRoom(r.id, r.token)}
+                  className="shrink-0 gap-1.5 bg-emerald-600 text-base font-bold text-white hover:bg-emerald-700 h-11"
+                >
+                  <Play className="h-4 w-4" /> VOLVER A MI PARTIDA
+                </Button>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {/* Banner de instalación PWA */}
+      <PWAInstallBanner />
+
       {/* Acciones rápidas */}
       <div className={`grid grid-cols-1 gap-3 ${user?.role === "ADMIN" ? "sm:grid-cols-2" : ""}`}>
         {user?.role === "ADMIN" && (

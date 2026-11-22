@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Check, X } from "lucide-react";
+import { Check, Copy, Play, X } from "lucide-react";
 
 interface Metrics {
   users: { total: number; players: number; hosts: number; admins: number };
@@ -46,6 +46,8 @@ interface PayoutRow {
 interface AdminRoom {
   id: string;
   token: string;
+  inviteToken: string;
+  isPublic: boolean;
   status: string;
   hostName: string;
   currentRound: number;
@@ -58,7 +60,7 @@ interface AdminRoom {
 }
 
 export function AdminView() {
-  const { user } = useApp();
+  const { user, openRoom } = useApp();
   const [metrics, setMetrics] = useState<Metrics | null>(null);
   const [transfers, setTransfers] = useState<TransferRow[]>([]);
   const [payouts, setPayouts] = useState<PayoutRow[]>([]);
@@ -252,7 +254,7 @@ export function AdminView() {
           {rooms.length === 0 ? (
             <Card className="border-dashed border-border/40"><CardContent className="py-8 text-center text-sm text-muted-foreground">Sin salas</CardContent></Card>
           ) : (
-            rooms.map((r) => <AdminRoomRow key={r.id} room={r} onSaved={loadAll} />)
+            rooms.map((r) => <AdminRoomRow key={r.id} room={r} onSaved={loadAll} onEnter={openRoom} />)
           )}
         </TabsContent>
       </Tabs>
@@ -272,7 +274,7 @@ function Stat({ label, value, sub }: { label: string; value: string; sub: string
   );
 }
 
-function AdminRoomRow({ room, onSaved }: { room: AdminRoom; onSaved: () => void }) {
+function AdminRoomRow({ room, onSaved, onEnter }: { room: AdminRoom; onSaved: () => void; onEnter: (id: string, token: string) => void }) {
   const [cardPrice, setCardPrice] = useState(room.cardPrice / 100);
   const [prizeLine, setPrizeLine] = useState(room.prizeLine / 100);
   const [prizeCorners, setPrizeCorners] = useState(room.prizeCorners / 100);
@@ -320,7 +322,37 @@ function AdminRoomRow({ room, onSaved }: { room: AdminRoom; onSaved: () => void 
           <div><Label className="text-[0.6rem]">Esquinas $</Label><Input type="number" step={0.5} value={prizeCorners} onChange={(e) => setPrizeCorners(Number(e.target.value))} className="h-8 text-sm" /></div>
           <div><Label className="text-[0.6rem]">Bingo $</Label><Input type="number" step={1} value={prizeBingo} onChange={(e) => setPrizeBingo(Number(e.target.value))} className="h-8 text-sm" /></div>
         </div>
-        <Button size="sm" onClick={save} disabled={saving} className="mt-2">Guardar</Button>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Button size="sm" onClick={() => onEnter(room.id, room.token)} className="gap-1 bg-emerald-600 text-white hover:bg-emerald-700">
+            <Play className="h-3.5 w-3.5" /> Entrar a la Sala
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="gap-1"
+            onClick={async () => {
+              const url = `${window.location.origin}/invite/${room.inviteToken}`;
+              try {
+                if (navigator.clipboard && window.isSecureContext) {
+                  await navigator.clipboard.writeText(url);
+                } else {
+                  const ta = document.createElement("textarea");
+                  ta.value = url;
+                  document.body.appendChild(ta);
+                  ta.select();
+                  document.execCommand("copy");
+                  document.body.removeChild(ta);
+                }
+                toast.success("Enlace copiado");
+              } catch {
+                toast.info("Enlace: " + url);
+              }
+            }}
+          >
+            <Copy className="h-3.5 w-3.5" /> Copiar Enlace
+          </Button>
+          <Button size="sm" onClick={save} disabled={saving} className="ml-auto">Guardar</Button>
+        </div>
       </CardContent>
     </Card>
   );

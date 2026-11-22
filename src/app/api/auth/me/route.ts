@@ -9,6 +9,8 @@ export async function GET() {
     user: {
       id: user.id,
       email: user.email,
+      phone: user.phone,
+      username: user.username,
       name: user.name,
       role: user.role as "PLAYER" | "HOST" | "ADMIN",
       balance: user.balance,

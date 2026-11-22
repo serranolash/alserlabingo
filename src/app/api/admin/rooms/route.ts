@@ -25,6 +25,8 @@ export const GET = withErrors(async () => {
     rooms: rooms.map((r) => ({
       id: r.id,
       token: r.token,
+      inviteToken: r.inviteToken,
+      isPublic: r.isPublic,
       status: r.status,
       hostName: r.host.name,
       hostEmail: r.host.email,

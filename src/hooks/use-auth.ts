@@ -23,20 +23,30 @@ export function useAuth() {
     };
   }, [setUser, setAuthReady]);
 
-  const login = useCallback(async (email: string, password: string) => {
-    const d = await apiFetch<{ user: unknown }>("/api/auth/login", {
-      method: "POST",
-      body: JSON.stringify({ email, password }),
-    });
-    setUser(d.user as never);
-    return d.user;
-  }, [setUser]);
+  const login = useCallback(
+    async (identifier: string, password: string, remember: boolean) => {
+      const d = await apiFetch<{ user: unknown }>("/api/auth/login", {
+        method: "POST",
+        body: JSON.stringify({ identifier, password, remember }),
+      });
+      setUser(d.user as never);
+      return d.user;
+    },
+    [setUser],
+  );
 
   const register = useCallback(
-    async (email: string, name: string, password: string) => {
+    async (params: {
+      name: string;
+      phone?: string;
+      username?: string;
+      email?: string;
+      password: string;
+      remember: boolean;
+    }) => {
       const d = await apiFetch<{ user: unknown }>("/api/auth/register", {
         method: "POST",
-        body: JSON.stringify({ email, name, password }),
+        body: JSON.stringify(params),
       });
       setUser(d.user as never);
       return d.user;

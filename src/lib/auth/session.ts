@@ -6,6 +6,9 @@
 //  - requireUser(): usuario autenticado o null (401)
 //  - requireAdmin(): usuario con rol ADMIN o null (403)
 //  - El check de host se hace en room-service: room.hostId === user.id
+//
+//  "Recordar mi cuenta": si remember=true, la cookie dura 30 días;
+//  si no, dura la sesión del navegador (se borra al cerrar).
 // =============================================================================
 import { cookies } from "next/headers";
 import type { User } from "@prisma/client";
@@ -13,15 +16,21 @@ import { db } from "@/lib/db";
 import { signSession, verifySession } from "./jwt";
 
 const COOKIE_NAME = process.env.AUTH_COOKIE_NAME ?? "alserla_session";
-const TTL_SEC = Number(process.env.AUTH_SESSION_TTL_SEC ?? 604800);
+const REMEMBER_TTL_SEC = Number(process.env.AUTH_REMEMBER_TTL_SEC ?? 2592000); // 30 días
+const SESSION_TTL_SEC = Number(process.env.AUTH_SESSION_TTL_SEC ?? 86400); // 1 día si no recuerda
 
 /** Crea la cookie de sesión tras un login/registro exitoso. */
 export async function setSessionCookie(payload: {
   sub: string;
-  email: string;
+  email: string | null;
   role: string;
+  remember?: boolean;
 }): Promise<void> {
-  const token = await signSession(payload);
+  const token = await signSession({
+    sub: payload.sub,
+    email: payload.email ?? "",
+    role: payload.role,
+  });
   const isProd = process.env.NODE_ENV === "production";
   const cookieStore = await cookies();
   cookieStore.set(COOKIE_NAME, token, {
@@ -29,7 +38,7 @@ export async function setSessionCookie(payload: {
     secure: isProd,
     sameSite: "lax",
     path: "/",
-    maxAge: TTL_SEC,
+    maxAge: payload.remember ? REMEMBER_TTL_SEC : SESSION_TTL_SEC,
   });
 }
 
@@ -56,6 +65,8 @@ export async function getCurrentUser(): Promise<User | null> {
     select: {
       id: true,
       email: true,
+      phone: true,
+      username: true,
       name: true,
       role: true,
       balance: true,
@@ -80,8 +91,8 @@ export async function requireAdmin(): Promise<User | null> {
   return user;
 }
 
-/** Promueve a ADMIN si el email coincide con ADMIN_BOOTSTRAP_EMAIL (primer admin). */
-export function maybeBootstrapAdmin(email: string): boolean {
+/** Promueve a ADMIN si el email coincide con ADMIN_BOOTSTRAP_EMAIL. */
+export function maybeBootstrapAdmin(email: string | null): boolean {
   const adminEmail = process.env.ADMIN_BOOTSTRAP_EMAIL;
-  return Boolean(adminEmail && email.toLowerCase() === adminEmail.toLowerCase());
+  return Boolean(email && adminEmail && email.toLowerCase() === adminEmail.toLowerCase());
 }

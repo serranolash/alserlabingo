@@ -696,3 +696,81 @@ export async function listActiveRooms(): Promise<
     isPublic: r.isPublic,
   }));
 }
+
+/** "Mis Salas en Curso": salas donde el usuario es host o participante, activas. */
+export async function listMyRooms(userId: string): Promise<
+  Array<{
+    id: string;
+    token: string;
+    status: string;
+    hostName: string;
+    isHost: boolean;
+    isPublic: boolean;
+    participants: number;
+    currentRound: number;
+    cardPrice: number;
+  }>
+> {
+  // Salas donde es host
+  const hosted = await db.room.findMany({
+    where: { hostId: userId, status: { in: ["WAITING", "RUNNING", "PAUSED"] } },
+    include: { _count: { select: { participants: true } } },
+  });
+  // Salas donde es participante (con el host)
+  const participating = await db.roomParticipant.findMany({
+    where: { userId },
+    include: {
+      room: {
+        include: {
+          host: { select: { name: true } },
+          _count: { select: { participants: true } },
+        },
+      },
+    },
+  });
+  const seen = new Set<string>();
+  const result: Array<{
+    id: string;
+    token: string;
+    status: string;
+    hostName: string;
+    isHost: boolean;
+    isPublic: boolean;
+    participants: number;
+    currentRound: number;
+    cardPrice: number;
+  }> = [];
+  for (const r of hosted) {
+    if (seen.has(r.id)) continue;
+    seen.add(r.id);
+    result.push({
+      id: r.id,
+      token: r.token,
+      status: r.status,
+      hostName: "Tú",
+      isHost: true,
+      isPublic: r.isPublic,
+      participants: r._count.participants,
+      currentRound: r.currentRound,
+      cardPrice: r.cardPrice,
+    });
+  }
+  for (const p of participating) {
+    const r = p.room;
+    if (seen.has(r.id)) continue;
+    if (r.status === "ENDED") continue;
+    seen.add(r.id);
+    result.push({
+      id: r.id,
+      token: r.token,
+      status: r.status,
+      hostName: r.host.name,
+      isHost: r.hostId === userId,
+      isPublic: r.isPublic,
+      participants: r._count.participants,
+      currentRound: r.currentRound,
+      cardPrice: r.cardPrice,
+    });
+  }
+  return result;
+}

@@ -4,7 +4,9 @@ import { create } from "zustand";
 
 export type PublicUser = {
   id: string;
-  email: string;
+  email: string | null;
+  phone: string | null;
+  username: string | null;
   name: string;
   role: "PLAYER" | "HOST" | "ADMIN";
   balance: number;
