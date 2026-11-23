@@ -67,6 +67,7 @@ function publicUser(u: {
   name: string;
   role: string;
   balance: number;
+  points: number;
 }) {
   return {
     id: u.id,
@@ -76,5 +77,6 @@ function publicUser(u: {
     name: u.name,
     role: u.role as "PLAYER" | "HOST" | "ADMIN",
     balance: u.balance,
+    points: u.points,
   };
 }

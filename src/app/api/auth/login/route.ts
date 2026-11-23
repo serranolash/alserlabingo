@@ -46,6 +46,7 @@ export const POST = withErrors(async (request: Request) => {
       name: user.name,
       role: user.role as "PLAYER" | "HOST" | "ADMIN",
       balance: user.balance,
+      points: user.points,
     },
   });
 });

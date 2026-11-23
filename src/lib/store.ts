@@ -10,9 +10,10 @@ export type PublicUser = {
   name: string;
   role: "PLAYER" | "HOST" | "ADMIN";
   balance: number;
+  points?: number; // La Tómbola Caliente (puntos gratis)
 };
 
-export type AppView = "lobby" | "room" | "wallet" | "admin";
+export type AppView = "lobby" | "room" | "wallet" | "admin" | "tombola";
 
 interface AppState {
   user: PublicUser | null;
@@ -26,6 +27,7 @@ interface AppState {
   openRoom: (roomId: string, token: string) => void;
   closeRoom: () => void;
   refreshBalance: (balance: number) => void;
+  refreshPoints: (points: number) => void;
   logout: () => Promise<void>;
 }
 
@@ -42,6 +44,8 @@ export const useApp = create<AppState>((set) => ({
   closeRoom: () => set({ roomId: null, roomToken: null, view: "lobby" }),
   refreshBalance: (balance) =>
     set((s) => (s.user ? { user: { ...s.user, balance } } : s)),
+  refreshPoints: (points) =>
+    set((s) => (s.user ? { user: { ...s.user, points } } : s)),
   logout: async () => {
     try {
       await apiFetch("/api/auth/logout", { method: "POST" });

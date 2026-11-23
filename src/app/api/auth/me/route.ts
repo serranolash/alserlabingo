@@ -14,6 +14,7 @@ export async function GET() {
       name: user.name,
       role: user.role as "PLAYER" | "HOST" | "ADMIN",
       balance: user.balance,
+      points: user.points,
     },
   });
 }

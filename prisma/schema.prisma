@@ -35,7 +35,11 @@ model User {
   name         String
   passwordHash String? // null => cuenta solo magic-link (futuro)
   role         String   @default("PLAYER") // PLAYER | HOST | ADMIN
-  balance      Int      @default(0) // centavos USD
+  balance      Int      @default(0) // centavos USD (Bingo 75)
+  // ── La Tómbola Caliente (economía de PUNTOS gratis, aislada del USD) ──
+  points          Int      @default(1000) // puntos gratuitos iniciales
+  lastDailyPointsAt DateTime? // reclamo de bonus +300 cada 12h
+  referralCode    String?  @unique // código de referido para invitar amigos
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -50,6 +54,7 @@ model User {
   payouts           PrizePayout[]        @relation("PayoutOwner")
   reviewedPayouts   PrizePayout[]        @relation("PayoutReviewer")
   ledgerEntries     LedgerEntry[]
+  tombolaBets       HotTombolaBet[]      // La Tómbola Caliente
 
   @@index([role])
 }
@@ -321,4 +326,48 @@ model LedgerEntry {
 
   @@index([userId, createdAt])
   @@index([roomId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  LA TÓMBOLA CALIENTE — juego gratuito de puntos (aislado del Bingo 75/USD).
+//  Motor determinístico stateless: bolillas reveladas por timestamp.
+// =============================================================================
+
+//  Ronda de La Tómbola. Provably Fair (serverSeed + seedHash SHA-256).
+//  ballsSequence = bolillas precalculadas: doradas (+0.2x, x2...) y la bomba.
+model HotTombolaRound {
+  id            String    @id @default(cuid())
+  serverSeed    String // seed secreta (se revela al final para verificación)
+  seedHash      String // sha256(serverSeed) — pública desde el inicio
+  status        String    @default("betting") // betting | running | crashed
+  ballsSequence Json // [{type:"mult"|"double"|"bomb", label, add?, mult?}, ...]
+  bettingEndsAt DateTime // fin de fase de apuestas (6s) = inicio fase running
+  startedAt     DateTime? // = bettingEndsAt (para calcular ballIndex)
+  crashedAt     DateTime? // momento en que salió la bomba
+  createdAt     DateTime  @default(now())
+
+  bets HotTombolaBet[]
+
+  @@index([status])
+  @@index([createdAt])
+}
+
+//  Apuesta de un jugador en una ronda de La Tómbola.
+//  pointsWagered/pointsWon en PUNTOS (no USD). cashedOutAtBall = bolilla al retirar.
+model HotTombolaBet {
+  id               String   @id @default(cuid())
+  roundId          String
+  userId           String
+  pointsWagered    Int
+  cashedOutAtBall  Int? // ballIndex en el que retiró
+  cashoutMultiplier Float? // multiplicador al retirar
+  pointsWon        Int      @default(0) // puntos ganados (0 si busted)
+  status           String   @default("active") // active | cashed_out | busted
+  createdAt        DateTime @default(now())
+
+  round HotTombolaRound @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  user  User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([roundId])
+  @@index([userId])
 }

@@ -11,6 +11,7 @@ import { LobbyView } from "./LobbyView";
 import { RoomView } from "./RoomView";
 import { WalletView } from "./WalletView";
 import { AdminView } from "./AdminView";
+import { TombolaView } from "@/components/tombola/TombolaView";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -71,6 +72,7 @@ export function AppShell() {
         {view === "room" && <RoomView key={roomId ?? "none"} />}
         {view === "wallet" && <WalletView />}
         {view === "admin" && <AdminView />}
+        {view === "tombola" && <TombolaView />}
       </main>
       <BottomNav />
     </div>
