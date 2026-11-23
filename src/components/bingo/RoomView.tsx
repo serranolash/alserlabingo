@@ -26,6 +26,7 @@ import {
   Pause,
   Play,
   RotateCcw,
+  Trash2,
   Volume2,
   VolumeX,
   Zap,
@@ -181,6 +182,18 @@ export function RoomView() {
         action === "start" ? "Sorteo iniciado" : action === "resume" ? "Sorteo reanudado" : action === "pause" ? "Sorteo pausado" : "Sala reiniciada",
       );
       await loadTickets();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Error");
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!roomId) return;
+    if (!confirm("¿Eliminar esta sala permanentemente? Se borrarán todos los datos (cartones, bolillas, premios).")) return;
+    try {
+      await apiFetch(`/api/rooms/${roomId}/delete`, { method: "POST" });
+      toast.success("Sala eliminada");
+      closeRoom();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Error");
     }
@@ -368,6 +381,11 @@ export function RoomView() {
                   {(state.status === "ENDED" || state.status === "RUNNING" || state.status === "PAUSED") && (
                     <Button onClick={() => hostAction("reset")} size="sm" variant="outline" className="gap-1">
                       <RotateCcw className="h-4 w-4" /> Reiniciar ronda
+                    </Button>
+                  )}
+                  {state.status === "ENDED" && (
+                    <Button onClick={handleDelete} size="sm" variant="destructive" className="gap-1">
+                      <Trash2 className="h-4 w-4" /> Eliminar sala
                     </Button>
                   )}
                 </div>

@@ -221,6 +221,29 @@ export async function resetRoom(hostUserId: string, roomId: string): Promise<Roo
   });
 }
 
+/**
+ * ELIMINAR sala — borra la sala y todos sus datos relacionados (claims, draws,
+ * tickets, purchases, payouts, participants). Solo el host o admin pueden hacerlo.
+ * Útil para limpiar salas terminadas (ENDED) o salas creadas por error.
+ */
+export async function deleteRoom(userId: string, roomId: string, isAdmin: boolean): Promise<{ ok: true }> {
+  const room = await db.room.findUnique({ where: { id: roomId } });
+  if (!room) throw notFound("Sala no encontrada");
+  if (!isAdmin && room.hostId !== userId) throw forbidden("Solo el anfitrión o admin puede eliminar la sala");
+
+  // Eliminar todo en orden (cascada manual para asegurar limpieza completa)
+  await db.$transaction([
+    db.prizePayout.deleteMany({ where: { roomId } }),
+    db.claim.deleteMany({ where: { roomId } }),
+    db.draw.deleteMany({ where: { roomId } }),
+    db.ticket.deleteMany({ where: { roomId } }),
+    db.purchase.deleteMany({ where: { roomId } }),
+    db.roomParticipant.deleteMany({ where: { roomId } }),
+    db.room.delete({ where: { id: roomId } }),
+  ]);
+  return { ok: true };
+}
+
 export async function scheduleRoom(hostUserId: string, roomId: string, startAtISO: string): Promise<Room> {
   const room = await db.room.findUnique({ where: { id: roomId } });
   if (!room) throw notFound("Sala no encontrada");

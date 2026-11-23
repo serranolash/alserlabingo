@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Check, Copy, Play, X } from "lucide-react";
+import { Check, Copy, Play, Trash2, X } from "lucide-react";
 
 interface Metrics {
   users: { total: number; players: number; hosts: number; admins: number };
@@ -350,6 +350,23 @@ function AdminRoomRow({ room, onSaved, onEnter }: { room: AdminRoom; onSaved: ()
             }}
           >
             <Copy className="h-3.5 w-3.5" /> Copiar Enlace
+          </Button>
+          <Button
+            size="sm"
+            variant="destructive"
+            className="gap-1"
+            onClick={async () => {
+              if (!confirm(`¿Eliminar la sala ${room.token} permanentemente?`)) return;
+              try {
+                await apiFetch(`/api/rooms/${room.id}/delete`, { method: "POST" });
+                toast.success("Sala eliminada");
+                onSaved();
+              } catch (e) {
+                toast.error(e instanceof Error ? e.message : "Error");
+              }
+            }}
+          >
+            <Trash2 className="h-3.5 w-3.5" /> Eliminar
           </Button>
           <Button size="sm" onClick={save} disabled={saving} className="ml-auto">Guardar</Button>
         </div>

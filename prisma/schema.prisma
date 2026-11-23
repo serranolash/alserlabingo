@@ -56,6 +56,8 @@ model User {
   ledgerEntries     LedgerEntry[]
   tombolaBets       HotTombolaBet[]      // La Tómbola Caliente
   rocketBets        RocketBet[]          // El Cohete Criollo
+  factory           Factory?             // La Fábrica Loca
+  metropoliPlayers  MetropoliPlayer[]    // Metrópoli Express
 
   @@index([role])
 }
@@ -417,4 +419,99 @@ model RocketBet {
 
   @@index([roundId])
   @@index([userId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  LA FÁBRICA LOCA — tycoon persistente de puntos (ingeniería/fábrica).
+//  Compras máquinas que producen goods por turno. Pueden averiarse o incendiarse.
+//  Vendes la producción acumulada por puntos. Las máquinas persisten entre sesiones.
+//  Reutiliza User.points (misma billetera de puntos que Tómbola y Cohete).
+// =============================================================================
+
+//  Fábrica del jugador (1 por usuario, persistente).
+//  lastProducedAt = timestamp del último cálculo de producción (stateless).
+model Factory {
+  id               String   @id @default(cuid())
+  userId           String   @unique
+  accumulatedGoods Int      @default(0) // goods producidos sin vender
+  lastProducedAt   DateTime? // último turno calculado (para producción stateless)
+  lastFireAt       DateTime? // último incendio (para probabilidad decreciente)
+  totalSold        Int      @default(0) // total de goods vendidos históricamente
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  user     User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  machines FactoryMachine[]
+
+  @@index([userId])
+}
+
+//  Máquina instalada en la fábrica del jugador.
+//  machineType = tipo (soldadora, prensa, horno, robot). broken = averiada.
+model FactoryMachine {
+  id          String   @id @default(cuid())
+  factoryId   String
+  machineType String   // SOLDADORA | PRENSA | HORNO | ROBOT
+  broken      Boolean  @default(false)
+  brokenAt    DateTime?
+  createdAt   DateTime @default(now())
+
+  factory Factory @relation(fields: [factoryId], references: [id], onDelete: Cascade)
+
+  @@index([factoryId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  METRÓPOLI EXPRESS — Constructor de ciudades por turnos simultáneos (5 min).
+//  Cada 15s el servidor revela 3 planos iguales para todos. Los jugadores
+//  colocan piezas en su tablero 6×6 buscando sinergias. 12 turnos = 3 min.
+// =============================================================================
+
+//  Partida de Metrópoli. Estado determinístico por timestamps.
+model MetropoliGame {
+  id            String   @id @default(cuid())
+  status        String   @default("waiting") // waiting | playing | finished
+  currentTurn   Int      @default(0) // 0..12
+  turnEndsAt    DateTime? // fin del turno actual (15s)
+  gameEndsAt    DateTime? // fin de la partida (12 turnos)
+  prizePool     Int      @default(0) // puntos apostados acumulados
+  winnerId      String?
+  createdAt     DateTime @default(now())
+
+  players MetropoliPlayer[]
+  plans   MetropoliPlan[]
+
+  @@index([status])
+}
+
+//  Jugador en una partida de Metrópoli.
+//  board = Json: tablero 6×6 con piezas colocadas. score = puntos de la ciudad.
+model MetropoliPlayer {
+  id          String   @id @default(cuid())
+  gameId      String
+  userId      String
+  entryFee    Int      @default(50) // puntos apostados para entrar
+  board       Json     // (string|null)[][] 6x6
+  score       Int      @default(0)
+  placedThisTurn Boolean @default(false)
+  createdAt   DateTime @default(now())
+
+  game MetropoliGame @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  user User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([gameId, userId])
+  @@index([gameId])
+}
+
+//  Plano revelado por turno (3 planos por turno, iguales para todos).
+model MetropoliPlan {
+  id          String   @id @default(cuid())
+  gameId      String
+  turnNumber  Int
+  pieceType   String   // HOSPITAL | FABRICA | PARQUE | AUTOPISTA | BARRIO | COMERCIO | ESCUELA | BOMBA
+  createdAt   DateTime @default(now())
+
+  game MetropoliGame @relation(fields: [gameId], references: [id], onDelete: Cascade)
+
+  @@index([gameId, turnNumber])
 }

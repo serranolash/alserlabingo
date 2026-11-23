@@ -1,6 +1,6 @@
 "use client";
 // Navegación inferior sticky (footer). Lobby · Sala · Billetera · Admin.
-import { Flame, Gamepad2, Home, Rocket, ShieldCheck, Wallet } from "lucide-react";
+import { Gamepad2, Home, ShieldCheck, Wallet } from "lucide-react";
 import { useApp, type AppView } from "@/lib/store";
 
 interface NavItem {
@@ -16,8 +16,7 @@ export function BottomNav() {
 
   const items: NavItem[] = [
     { view: "lobby", label: "Lobby", icon: <Home className="h-5 w-5" />, show: true },
-    { view: "tombola", label: "Tómbola", icon: <Flame className="h-5 w-5" />, show: true },
-    { view: "cohete", label: "Cohete", icon: <Rocket className="h-5 w-5" />, show: true },
+    { view: "juegos", label: "Juegos", icon: <Gamepad2 className="h-5 w-5" />, show: true },
     { view: "room", label: "Sala", icon: <Gamepad2 className="h-5 w-5" />, show: Boolean(roomId) },
     { view: "wallet", label: "Billetera", icon: <Wallet className="h-5 w-5" />, show: true },
     { view: "admin", label: "Admin", icon: <ShieldCheck className="h-5 w-5" />, show: user.role === "ADMIN" },

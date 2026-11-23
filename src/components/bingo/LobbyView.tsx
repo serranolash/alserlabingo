@@ -145,30 +145,16 @@ export function LobbyView() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-5 px-4 py-5">
-      {/* Banner La Tómbola Caliente (juego gratis de puntos) */}
+      {/* Banner Juegos Recreativos (unificado) */}
       <button
-        onClick={() => setView("tombola")}
-        className="flex w-full items-center justify-between gap-3 rounded-xl border border-orange-500/40 bg-gradient-to-r from-orange-600/20 to-amber-600/20 p-3 text-left"
+        onClick={() => setView("juegos")}
+        className="flex w-full items-center justify-between gap-3 rounded-xl border border-gold/40 bg-gradient-to-r from-orange-600/15 via-purple-600/15 to-cyan-600/15 p-3 text-left"
       >
         <div className="min-w-0">
-          <div className="text-base font-black text-orange-400">🔥 NUEVO: La Tómbola Caliente</div>
-          <div className="text-xs text-muted-foreground">Juega GRATIS y gana puntos · Retira antes de la BOMBA</div>
+          <div className="text-base font-black text-gold">🎮 Juegos Recreativos</div>
+          <div className="text-xs text-muted-foreground">Tómbola · Cohete · Fábrica · Metrópoli · Juega GRATIS</div>
         </div>
         <div className="shrink-0 rounded-lg bg-gold px-3 py-1.5 text-sm font-black text-[#3a1d05]">
-          {user?.points ?? 0} pts
-        </div>
-      </button>
-
-      {/* Banner El Cohete Criollo (juego gratis de puntos) */}
-      <button
-        onClick={() => setView("cohete")}
-        className="flex w-full items-center justify-between gap-3 rounded-xl border border-purple-500/40 bg-gradient-to-r from-purple-600/20 to-blue-600/20 p-3 text-left"
-      >
-        <div className="min-w-0">
-          <div className="text-base font-black text-purple-400">🚀 NUEVO: El Cohete Criollo</div>
-          <div className="text-xs text-muted-foreground">¡Salta antes de que explote! · Puntos gratis</div>
-        </div>
-        <div className="shrink-0 rounded-lg bg-purple-500 px-3 py-1.5 text-sm font-black text-white">
           {user?.points ?? 0} pts
         </div>
       </button>
