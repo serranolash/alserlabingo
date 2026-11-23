@@ -12,6 +12,7 @@ import { RoomView } from "./RoomView";
 import { WalletView } from "./WalletView";
 import { AdminView } from "./AdminView";
 import { TombolaView } from "@/components/tombola/TombolaView";
+import { RocketView } from "@/components/cohete/RocketView";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -73,6 +74,7 @@ export function AppShell() {
         {view === "wallet" && <WalletView />}
         {view === "admin" && <AdminView />}
         {view === "tombola" && <TombolaView />}
+        {view === "cohete" && <RocketView />}
       </main>
       <BottomNav />
     </div>

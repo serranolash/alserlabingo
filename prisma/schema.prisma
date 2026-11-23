@@ -55,6 +55,7 @@ model User {
   reviewedPayouts   PrizePayout[]        @relation("PayoutReviewer")
   ledgerEntries     LedgerEntry[]
   tombolaBets       HotTombolaBet[]      // La Tómbola Caliente
+  rocketBets        RocketBet[]          // El Cohete Criollo
 
   @@index([role])
 }
@@ -367,6 +368,52 @@ model HotTombolaBet {
 
   round HotTombolaRound @relation(fields: [roundId], references: [id], onDelete: Cascade)
   user  User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([roundId])
+  @@index([userId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  EL COHETE CRIOLLO — juego gratis de puntos (Crash / Aviator).
+//  Motor determinístico stateless: el multiplicador crece exponencialmente
+//  según el tiempo. crashMultiplier precalculado con house edge 3%.
+//  Reutiliza User.points (misma billetera de puntos que La Tómbola Caliente).
+// =============================================================================
+
+//  Vuelo del cohete. Provably Fair (serverSeed + seedHash SHA-256).
+//  crashMultiplier = punto exacto precalculado donde explota (1.00x..100x).
+model RocketRound {
+  id              String    @id @default(cuid())
+  serverSeed      String // seed secreta (se revela al explotar para verificación)
+  seedHash        String // sha256(serverSeed) — pública desde el inicio
+  status          String    @default("betting") // betting | flying | crashed
+  crashMultiplier Float // punto precalculado de explosión (con house edge 3%)
+  bettingEndsAt   DateTime // fin de apuestas (6s) = inicio del vuelo
+  startedAt       DateTime? // = bettingEndsAt (para calcular elapsedSec)
+  crashedAt       DateTime? // momento de la explosión
+  createdAt       DateTime  @default(now())
+
+  bets RocketBet[]
+
+  @@index([status])
+  @@index([createdAt])
+}
+
+//  Apuesta de un jugador en un vuelo del cohete.
+//  pointsWagered/pointsWon en PUNTOS (compartido con La Tómbola).
+model RocketBet {
+  id              String   @id @default(cuid())
+  roundId         String
+  userId          String
+  pointsWagered   Int
+  autoCashoutAt   Float? // auto-salto opcional (ej. 2.00x)
+  cashoutMultiplier Float? // multiplicador al saltar
+  pointsWon       Int      @default(0) // puntos ganados (0 si explotó)
+  status          String   @default("active") // active | jumped | crashed
+  createdAt       DateTime @default(now())
+
+  round RocketRound @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  user  User        @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([roundId])
   @@index([userId])

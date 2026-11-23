@@ -159,6 +159,20 @@ export function LobbyView() {
         </div>
       </button>
 
+      {/* Banner El Cohete Criollo (juego gratis de puntos) */}
+      <button
+        onClick={() => setView("cohete")}
+        className="flex w-full items-center justify-between gap-3 rounded-xl border border-purple-500/40 bg-gradient-to-r from-purple-600/20 to-blue-600/20 p-3 text-left"
+      >
+        <div className="min-w-0">
+          <div className="text-base font-black text-purple-400">🚀 NUEVO: El Cohete Criollo</div>
+          <div className="text-xs text-muted-foreground">¡Salta antes de que explote! · Puntos gratis</div>
+        </div>
+        <div className="shrink-0 rounded-lg bg-purple-500 px-3 py-1.5 text-sm font-black text-white">
+          {user?.points ?? 0} pts
+        </div>
+      </button>
+
       {/* Mis Salas en Curso — siempre visibles (públicas o privadas) */}
       {myRooms.length > 0 && (
         <div className="space-y-2">

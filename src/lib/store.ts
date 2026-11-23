@@ -13,7 +13,7 @@ export type PublicUser = {
   points?: number; // La Tómbola Caliente (puntos gratis)
 };
 
-export type AppView = "lobby" | "room" | "wallet" | "admin" | "tombola";
+export type AppView = "lobby" | "room" | "wallet" | "admin" | "tombola" | "cohete";
 
 interface AppState {
   user: PublicUser | null;
