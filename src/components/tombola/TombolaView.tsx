@@ -8,11 +8,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
+import { TombolaStage } from "./TombolaStage";
 import {
   ArrowLeft,
   Gift,
   MessageCircle,
-  Sparkles,
   TrendingUp,
   Zap,
 } from "lucide-react";
@@ -51,6 +51,7 @@ interface TombolaState {
   nextDailyIn: number | null;
   weeklyRanking: Array<{ userId: string; name: string; points: number }>;
   referralCode: string | null;
+  recentRounds: Array<{ multiplier: number; bombIndex: number }>;
 }
 
 export function TombolaView() {
@@ -59,6 +60,8 @@ export function TombolaView() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [betAmt, setBetAmt] = useState(100);
+  const [justCashedOut, setJustCashedOut] = useState(false);
+  const [justCrashed, setJustCrashed] = useState(false);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const prevBallIndexRef = useRef(0);
   const prevPhaseRef = useRef<string>("");
@@ -96,6 +99,8 @@ export function TombolaView() {
     if (phase === "crashed" && prevPhaseRef.current !== "crashed") {
       playExplosion();
       vibrate([100, 50, 200]);
+      setJustCrashed(true);
+      setTimeout(() => setJustCrashed(false), 700);
     }
     prevBallIndexRef.current = ballIndex;
     prevPhaseRef.current = phase;
@@ -172,6 +177,8 @@ export function TombolaView() {
       refreshPoints(d.points);
       playCoin();
       vibrate([60, 40, 60, 40, 120]);
+      setJustCashedOut(true);
+      setTimeout(() => setJustCashedOut(false), 1200);
       toast.success(`¡Retiraste en ${d.multiplier.toFixed(2)}x! +${d.won} puntos`);
       await load();
     } catch (e) {
@@ -208,14 +215,6 @@ export function TombolaView() {
   const myBet = state?.myBet;
   const points = state?.points ?? user.points ?? 0;
 
-  // Color de la tómbola según multiplicador
-  const tombolaColor =
-    multiplier >= 5 ? "from-red-500 to-orange-600"
-    : multiplier >= 2.5 ? "from-orange-500 to-amber-600"
-    : multiplier >= 1.5 ? "from-amber-400 to-yellow-500"
-    : "from-yellow-300 to-amber-400";
-  const spinSpeed = Math.max(0.4, 1.6 - multiplier * 0.12);
-
   return (
     <div className="felt-bg min-h-[calc(100vh-3.5rem)] pb-6">
       <div className="mx-auto max-w-md space-y-4 px-3 py-4">
@@ -243,71 +242,56 @@ export function TombolaView() {
           <p className="text-xs text-muted-foreground">Juega GRATIS · Retira antes de la BOMBA</p>
         </div>
 
-        {/* Tómbola animada */}
-        <Card className="border-gold/30 bg-card/80">
-          <CardContent className="flex flex-col items-center py-6">
-            {loading ? (
-              <div className="py-10 text-muted-foreground">Cargando…</div>
-            ) : round ? (
-              <>
-                {/* Bolilla central giratoria */}
-                <div
-                  className={`relative flex h-32 w-32 items-center justify-center rounded-full bg-gradient-to-br ${tombolaColor} shadow-2xl ${phase === "running" ? "animate-spin" : ""}`}
-                  style={{ animationDuration: phase === "running" ? `${spinSpeed}s` : undefined }}
-                >
-                  {phase === "betting" ? (
-                    <Sparkles className="h-10 w-10 text-white" />
-                  ) : phase === "crashed" ? (
-                    <span className="text-4xl">💥</span>
-                  ) : (
-                    <span className="text-3xl font-black text-white">{multiplier.toFixed(2)}x</span>
-                  )}
-                </div>
+        {/* Historial de rondas recientes (multiplicadores de crash) */}
+        {state && state.recentRounds.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {state.recentRounds.slice(0, 12).map((r, i) => (
+              <span
+                key={i}
+                className={`rounded-md px-1.5 py-0.5 text-[0.65rem] font-bold ${
+                  r.multiplier >= 3 ? "bg-red-600/30 text-red-400" : r.multiplier >= 1.5 ? "bg-orange-600/30 text-orange-400" : "bg-muted/40 text-muted-foreground"
+                }`}
+              >
+                {r.multiplier.toFixed(2)}x
+              </span>
+            ))}
+          </div>
+        )}
 
-                {/* Multiplicador / estado */}
-                <div className="mt-4 text-center">
-                  {phase === "betting" && (
-                    <>
-                      <div className="text-lg font-bold text-gold">Próxima ronda en {Math.max(0, Math.ceil((round.bettingEndsAt - Date.now()) / 1000))}s</div>
-                      <div className="text-xs text-muted-foreground">¡Apuesta ahora!</div>
-                    </>
-                  )}
-                  {phase === "running" && (
-                    <div className="text-3xl font-black text-gold tabular-nums">{multiplier.toFixed(2)}x</div>
-                  )}
-                  {phase === "crashed" && (
-                    <>
-                      <div className="text-2xl font-black text-red-500">💥 BOMBA en {round.bombIndex >= 0 ? round.bombIndex : "?"}</div>
-                      {round.nextRoundIn !== null && (
-                        <div className="text-xs text-muted-foreground">Próxima ronda en {Math.ceil(round.nextRoundIn / 1000)}s</div>
-                      )}
-                    </>
-                  )}
-                </div>
+        {/* Escenario visual premium de La Tómbola */}
+        {loading ? (
+          <div className="flex h-80 items-center justify-center rounded-xl border border-gold/20 bg-card/60 text-muted-foreground">Cargando…</div>
+        ) : round ? (
+          <TombolaStage
+            phase={round.phase}
+            multiplier={round.multiplier}
+            ballIndex={round.ballIndex}
+            bettingEndsAt={round.bettingEndsAt}
+            nextRoundIn={round.nextRoundIn}
+            justCashedOut={justCashedOut}
+            justCrashed={justCrashed}
+          />
+        ) : null}
 
-                {/* Bolillas reveladas */}
-                {round.revealedBalls.length > 0 && (
-                  <div className="mt-3 flex flex-wrap justify-center gap-1">
-                    {round.revealedBalls.map((b, i) => (
-                      <span
-                        key={i}
-                        className={`rounded-full px-2 py-0.5 text-xs font-bold ${
-                          b.type === "bomb"
-                            ? "bg-red-600 text-white"
-                            : b.type === "double"
-                              ? "bg-purple-500 text-white"
-                              : "bg-gold text-[#3a1d05]"
-                        }`}
-                      >
-                        {b.label}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </>
-            ) : null}
-          </CardContent>
-        </Card>
+        {/* Bolillas reveladas */}
+        {round && round.revealedBalls.length > 0 && (
+          <div className="flex flex-wrap justify-center gap-1">
+            {round.revealedBalls.map((b, i) => (
+              <span
+                key={i}
+                className={`rounded-full px-2 py-0.5 text-xs font-bold ${
+                  b.type === "bomb"
+                    ? "bg-red-600 text-white"
+                    : b.type === "double"
+                      ? "bg-purple-500 text-white"
+                      : "bg-gold text-[#3a1d05]"
+                }`}
+              >
+                {b.label}
+              </span>
+            ))}
+          </div>
+        )}
 
         {/* Controles de apuesta / retiro */}
         {round && phase === "betting" && (
@@ -341,12 +325,12 @@ export function TombolaView() {
           </Card>
         )}
 
-        {/* RETIRAR gigante */}
+        {/* RETIRAR gigante — pulso urgente que se acelera con el multiplicador */}
         {round && phase === "running" && myBet?.status === "active" && (
           <button
             onClick={handleCashout}
             disabled={busy}
-            className="w-full rounded-2xl bg-gradient-to-r from-emerald-500 to-green-600 py-6 text-center text-white shadow-xl active:scale-95"
+            className={`retire-urgent w-full rounded-2xl bg-gradient-to-r from-emerald-500 to-green-600 py-6 text-center text-white shadow-xl active:scale-95 ${multiplier >= 3 ? "ring-4 ring-red-500/40" : ""}`}
           >
             <div className="text-2xl font-black">¡RETIRAR PUNTOS!</div>
             <div className="text-lg font-bold">{myBet.potentialWin} pts @ {myBet.currentMultiplier.toFixed(2)}x</div>

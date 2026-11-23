@@ -17,6 +17,7 @@ import {
   INITIAL_POINTS,
   REFERRAL_REWARD_POINTS,
   ROUND_GAP_MS,
+  computeMultiplier,
   findBombIndex,
   generateBallsSequence,
   generateReferralCode,
@@ -69,6 +70,7 @@ export interface TombolaState {
   nextDailyIn: number | null; // ms al próximo bonus
   weeklyRanking: Array<{ userId: string; name: string; points: number }>;
   referralCode: string | null;
+  recentRounds: Array<{ multiplier: number; bombIndex: number }>; // historial de crash
 }
 
 /** Devuelve/crea la ronda actual y entrega el estado completo para el usuario. */
@@ -155,6 +157,19 @@ export async function getTombolaState(userId: string): Promise<TombolaState> {
       ? Math.max(0, round.crashedAt.getTime() + ROUND_GAP_MS - now)
       : null;
 
+  // Historial de últimas rondas crasheadas (multiplicador de crash)
+  const recentCrashedRows = await db.hotTombolaRound.findMany({
+    where: { status: "crashed" },
+    orderBy: { createdAt: "desc" },
+    take: 12,
+    select: { ballsSequence: true },
+  });
+  const recentCrashed = recentCrashedRows.map((r) => {
+    const b = parseBalls(r.ballsSequence);
+    const bi = findBombIndex(b);
+    return { multiplier: computeMultiplier(b, bi), bombIndex: bi };
+  });
+
   return {
     round: {
       id: round.id,
@@ -196,6 +211,7 @@ export async function getTombolaState(userId: string): Promise<TombolaState> {
     nextDailyIn,
     weeklyRanking,
     referralCode,
+    recentRounds: recentCrashed,
   };
 }
 
