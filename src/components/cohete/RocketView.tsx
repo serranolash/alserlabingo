@@ -35,6 +35,8 @@ interface RocketState {
   } | null;
   bets: Array<{ userId: string; name: string; pointsWagered: number; status: string; cashoutMultiplier: number | null; pointsWon: number }>;
   points: number;
+  canClaimDaily: boolean;
+  nextDailyIn: number | null;
   recentFlights: Array<{ crashMultiplier: number }>;
 }
 
@@ -213,6 +215,17 @@ export function RocketView() {
     finally { setBusy(false); }
   };
 
+  const handleDaily = async () => {
+    setBusy(true);
+    try {
+      const d = await apiFetch<{ points: number; awarded: number }>("/api/tombola/daily-bonus", { method: "POST" });
+      refreshPoints(d.points);
+      toast.success(`¡+${d.awarded} puntos gratis!`);
+      await load();
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Error"); }
+    finally { setBusy(false); }
+  };
+
   if (!user) return <div className="py-20 text-center text-sm text-muted-foreground">Inicia sesión para jugar.</div>;
 
   const round = state?.round;
@@ -236,7 +249,14 @@ export function RocketView() {
           <button onClick={() => setView("lobby")} className="flex items-center gap-1 text-sm text-white/60 hover:text-white">
             <ArrowLeft className="h-4 w-4" /> Volver
           </button>
-          <Badge className="bg-gold text-[#3a1d05] gap-1"><Zap className="h-3 w-3" /> {points} pts</Badge>
+          <div className="flex items-center gap-2">
+            <Badge className="bg-gold text-[#3a1d05] gap-1"><Zap className="h-3 w-3" /> {points} pts</Badge>
+            {state?.canClaimDaily && (
+              <Button size="sm" onClick={handleDaily} disabled={busy} className="gap-1 h-8 bg-emerald-600 text-white">
+                <Gift className="h-3.5 w-3.5" /> +300
+              </Button>
+            )}
+          </div>
         </div>
 
         <div className="text-center">
@@ -359,6 +379,32 @@ export function RocketView() {
             )}
           </div>
         </div>
+
+        {/* Estado: Sin puntos — reclamar bono diario */}
+        {points === 0 && (
+          <Card className="border-emerald-600/40 bg-emerald-600/10">
+            <CardContent className="flex flex-col items-center gap-3 py-6 text-center">
+              <Gift className="h-10 w-10 text-emerald-400" />
+              <div className="text-base font-bold text-emerald-400">¡Te quedaste sin puntos!</div>
+              <div className="text-sm text-white/60">
+                {state?.canClaimDaily
+                  ? "Reclama tu bono diario gratis de +300 puntos para seguir jugando."
+                  : `Próximo bono en ${Math.ceil((state?.nextDailyIn ?? 0) / 60000)} min. ¡O invita amigos por WhatsApp para ganar +500!`}
+              </div>
+              {state?.canClaimDaily && (
+                <Button onClick={handleDaily} disabled={busy} className="gap-2 bg-emerald-600 text-white h-12 text-base">
+                  <Gift className="h-5 w-5" /> Reclamar +300 puntos gratis
+                </Button>
+              )}
+              <Button onClick={() => {
+                const url = `${window.location.origin}/?ref=${user?.id ?? ""}`;
+                window.open(`https://wa.me/?text=${encodeURIComponent(`🚀 ¡Juega El Cohete Criollo GRATIS en Alserla Bingo! ${url}`)}`, "_blank");
+              }} className="gap-2 bg-emerald-600/80 text-white h-10 text-sm">
+                <MessageCircle className="h-4 w-4" /> Invitar amigos (+500 pts)
+              </Button>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Controles de apuesta */}
         {round && phase === "betting" && (

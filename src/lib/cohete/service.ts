@@ -55,6 +55,8 @@ export interface RocketState {
     pointsWon: number;
   }>;
   points: number;
+  canClaimDaily: boolean;
+  nextDailyIn: number | null;
   recentFlights: Array<{ crashMultiplier: number }>;
 }
 
@@ -151,6 +153,14 @@ export async function getRocketState(userId: string): Promise<RocketState> {
       pointsWon: b.pointsWon,
     })),
     points: user.points,
+    canClaimDaily:
+      !user.lastDailyPointsAt ||
+      now - user.lastDailyPointsAt.getTime() >= 12 * 60 * 60 * 1000,
+    nextDailyIn:
+      !user.lastDailyPointsAt ||
+      now - user.lastDailyPointsAt.getTime() >= 12 * 60 * 60 * 1000
+        ? null
+        : user.lastDailyPointsAt.getTime() + 12 * 60 * 60 * 1000 - now,
     recentFlights: recentCrashed.map((r) => ({ crashMultiplier: r.crashMultiplier })),
   };
 }

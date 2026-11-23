@@ -293,6 +293,26 @@ export function TombolaView() {
           </div>
         )}
 
+        {/* Estado: Sin puntos — reclamar bono diario */}
+        {points === 0 && (
+          <Card className="border-emerald-600/40 bg-emerald-600/10">
+            <CardContent className="flex flex-col items-center gap-3 py-6 text-center">
+              <Gift className="h-10 w-10 text-emerald-400" />
+              <div className="text-base font-bold text-emerald-400">¡Te quedaste sin puntos!</div>
+              <div className="text-sm text-muted-foreground">
+                {state?.canClaimDaily
+                  ? "Reclama tu bono diario gratis de +300 puntos para seguir jugando."
+                  : `Próximo bono en ${Math.ceil((state?.nextDailyIn ?? 0) / 60000)} min. ¡O invita amigos por WhatsApp para ganar +500!`}
+              </div>
+              {state?.canClaimDaily && (
+                <Button onClick={handleDaily} disabled={busy} className="gap-2 bg-emerald-600 text-white h-12 text-base">
+                  <Gift className="h-5 w-5" /> Reclamar +300 puntos gratis
+                </Button>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
         {/* Controles de apuesta / retiro */}
         {round && phase === "betting" && (
           <Card className="bg-card/80">
